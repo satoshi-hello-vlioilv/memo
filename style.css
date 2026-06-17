@@ -505,6 +505,9 @@ button:disabled{cursor:not-allowed;opacity:.45}
   box-shadow:var(--shadow-2);
 }
 .drop-overlay .drop-card i{font-size:34px}
+.drop-overlay .drop-card .drop-sub{
+  font-size:12.5px;font-weight:600;color:var(--text-sub);letter-spacing:.01em;
+}
 
 /* ============================================================
    ライトボックス（画像拡大表示）

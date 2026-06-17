@@ -112,7 +112,7 @@ function collectRefs() {
     'interimBar','interimText','bodyInput','charCount','saveState',
     'btnCopyText','btnDelete','btnSave','btnNew','btnFormats',
     'imgPanel','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
-    'thumbSize','thumbGrid','imgEmpty','dropOverlay','editorPane',
+    'thumbSize','thumbGrid','imgEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
     'lbClose','lbStage','lbImg','lbPrev','lbNext',
     'formatModal','fmClose','fmNew','fmList','fmEmpty','fmName','fmContent','fmDelete','fmSave',
@@ -915,6 +915,57 @@ async function copyMemoText() {
 /* ============================================================
    ドラッグ&ドロップ
    ============================================================ */
+const isJsonFile = f => /\.json$/i.test(f.name || '') || f.type === 'application/json' || f.type === 'text/json';
+
+/* ドラッグ中のファイル種別を推定し、オーバーレイの案内文を切り替える */
+function updateDropOverlay(e) {
+  const items = e.dataTransfer ? e.dataTransfer.items : null;
+  let hasJson = false, hasImage = false, hasOther = false;
+  if (items) {
+    for (const it of items) {
+      if (it.kind !== 'file') continue;
+      const t = (it.type || '').toLowerCase();
+      if (t === 'application/json' || t === 'text/json') hasJson = true;
+      else if (t.startsWith('image/')) hasImage = true;
+      else hasOther = true;   /* 拡張子 .json でも type が空になる環境があるため汎用扱い */
+    }
+  }
+  let main, sub;
+  if (hasJson && !hasImage) {
+    main = 'JSON データを取り込む';
+    sub  = 'Memo Studio / Minutes Memo Pro のデータに対応';
+  } else if (hasImage && !hasJson && !hasOther) {
+    main = '画像をメモに添付';
+    sub  = 'ドロップして画像を登録します';
+  } else {
+    main = 'ファイルをドロップして取り込み';
+    sub  = '画像はメモに添付／JSON はデータを取り込み';
+  }
+  refs.dropMainText.textContent = main;
+  refs.dropSubText.textContent = sub;
+}
+
+/* ドロップされたファイルを種別で振り分ける（JSON=データ取込 / 画像=添付） */
+function handleDroppedFiles(fileList) {
+  const files = [...fileList];
+  if (files.length === 0) return;
+  const jsonFiles  = files.filter(isJsonFile);
+  const imageFiles = files.filter(f => f.type.startsWith('image/'));
+
+  if (jsonFiles.length > 0) {
+    if (jsonFiles.length > 1 || imageFiles.length > 0) {
+      toast('JSON データを取り込みます（他のファイルは無視されます）', 'info');
+    }
+    importData(jsonFiles[0]);
+    return;
+  }
+  if (imageFiles.length > 0) {
+    addImageFiles(imageFiles);
+    return;
+  }
+  toast('対応していないファイルです（画像 または JSON データをドロップしてください）', 'error');
+}
+
 function setupDragDrop() {
   let depth = 0;
   const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
@@ -922,6 +973,7 @@ function setupDragDrop() {
     if (!hasFiles(e)) return;
     e.preventDefault();
     depth++;
+    updateDropOverlay(e);
     refs.dropOverlay.hidden = false;
   });
   window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
@@ -935,7 +987,7 @@ function setupDragDrop() {
     e.preventDefault();
     depth = 0;
     refs.dropOverlay.hidden = true;
-    addImageFiles(e.dataTransfer.files);
+    handleDroppedFiles(e.dataTransfer.files);
   });
 }
 

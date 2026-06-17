@@ -730,6 +730,7 @@ function togglePanel(open) {
 }
 function applySidebarState() {
   refs.app.classList.toggle('sidebar-closed', !state.sidebarOpen);
+  refs.btnToggleSidebar.title = state.sidebarOpen ? 'サイドバーを閉じる' : 'サイドバーを開く';
 }
 function toggleSidebar() {
   state.sidebarOpen = !state.sidebarOpen;
@@ -740,6 +741,84 @@ function toggleSidebar() {
 /* ============================================================
    インポート・エクスポート・コピー
    ============================================================ */
+/* ============================================================
+   Minutes Memo Pro フォーマット変換
+   ============================================================ */
+function dataURLtoBlob(dataURL) {
+  const [header, b64] = dataURL.split(',');
+  const mime = (header.match(/:(.*?);/) || ['', 'image/png'])[1];
+  const binary = atob(b64);
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+function detectImportFormat(data) {
+  if (!data || typeof data !== 'object') return 'unknown';
+  if (Array.isArray(data.sessions)) return 'minutespro-all';
+  if (data.id && data.date !== undefined && Array.isArray(data.memos)) {
+    const noTags = !data.tags;
+    const objectTags = Array.isArray(data.tags) && (data.tags.length === 0 || typeof data.tags[0] === 'object');
+    if (noTags || objectTags) return 'minutespro-session';
+  }
+  if (Array.isArray(data.memos) || Array.isArray(data.formats) || Array.isArray(data.tags)) return 'memostudio';
+  return 'unknown';
+}
+
+function convertMppSession(session, flagMasters) {
+  const tagNames = (session.tags || []).map(t => t.name);
+  const title = tagNames.length > 0 ? tagNames.join(' / ') : (session.date || '名称未設定');
+  const lines = [];
+  const imgItems = [];
+  const sorted = [...(session.memos || [])].reverse();
+  sorted.forEach(memo => {
+    const flag = memo.flagId ? (flagMasters || []).find(f => f.id === memo.flagId) : null;
+    const flagStr = flag ? `【${flag.name}】 ` : '';
+    const memoTitle = memo.title && memo.title !== 'タイトルなし' ? memo.title : '';
+    lines.push(`[${memo.datetime || ''}] ${flagStr}${memoTitle}`.trimEnd());
+    (memo.items || []).forEach(it => {
+      if (it.type === 'text' && it.value) lines.push(it.value);
+      else if (it.type === 'image' && it.value) {
+        lines.push(`[画像 ${imgItems.length + 1}]`);
+        imgItems.push({ dataURL: it.value, name: `img_${imgItems.length + 1}.png` });
+      }
+    });
+    lines.push('');
+  });
+  const dateTs = session.date ? new Date(session.date + 'T00:00:00').getTime() : Date.now();
+  return {
+    title,
+    tags: tagNames,
+    body: lines.join('\n').trim(),
+    createdAt: dateTs,
+    updatedAt: dateTs,
+    imageCount: imgItems.length,
+    _imgs: imgItems,
+  };
+}
+
+async function importMppSession(session, flagMasters) {
+  const memo = convertMppSession(session, flagMasters);
+  const imgs = memo._imgs;
+  delete memo._imgs;
+  const memoId = await Store.add('memos', { ...memo, imageCount: 0 });
+  let saved = 0;
+  for (const img of imgs) {
+    try {
+      const blob = dataURLtoBlob(img.dataURL);
+      await Store.add('images', { memoId, name: img.name, type: blob.type, blob, createdAt: Date.now() });
+      saved++;
+    } catch {}
+  }
+  if (saved > 0) {
+    const m = await Store.get('memos', memoId);
+    await Store.put('memos', { ...m, imageCount: saved });
+  }
+  for (const tag of memo.tags) {
+    if (!state.tagsMaster.includes(tag)) await Store.put('tags', { name: tag });
+  }
+}
+
 async function exportData() {
   const data = {
     memos: state.memos,
@@ -757,40 +836,67 @@ async function exportData() {
 
 async function importData(file) {
   if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast('ファイルの読み込みに失敗しました', 'error');
+    refs.fileImport.value = '';
+    return;
+  }
+
+  const fmt = detectImportFormat(data);
+  if (fmt === 'unknown') {
+    toast('対応していないファイル形式です（Memo Studio または Minutes Memo Pro のデータが必要です）', 'error');
+    refs.fileImport.value = '';
+    return;
+  }
+
+  const isMpp = fmt !== 'memostudio';
+  const sessionCount = fmt === 'minutespro-all' ? (data.sessions || []).length : 1;
+  const msg = isMpp
+    ? `Minutes Memo Pro のデータ（${sessionCount} 件の会議）を変換してインポートします。\n画像も含めて復元されます。現在のデータに追加されます。`
+    : '現在のデータに統合（上書きおよび追加）されます。\nよろしいですか？（画像は復元されません）';
+
   const v = await dialog({
     title: 'データのインポート',
-    message: '現在のデータに統合（上書きおよび追加）されます。\nよろしいですか？（画像は復元されません）',
+    message: msg,
     buttons: [
       { label: 'キャンセル', value: 'cancel' },
-      { label: 'インポート', value: 'ok', kind: 'danger' }
+      { label: 'インポート', value: 'ok', kind: isMpp ? 'primary' : 'danger' }
     ]
   });
   if (v !== 'ok') { refs.fileImport.value = ''; return; }
 
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    try {
-      const data = JSON.parse(e.target.result);
-      if (data.tags) {
-        for (const t of data.tags) await Store.put('tags', { name: t });
-      }
-      if (data.formats) {
-        for (const f of data.formats) await Store.put('formats', f);
-      }
-      if (data.memos) {
-        for (const m of data.memos) await Store.put('memos', m);
-      }
+  try {
+    if (fmt === 'minutespro-all') {
+      const flagMasters = data.flagMasters || [];
+      for (const session of (data.sessions || [])) await importMppSession(session, flagMasters);
+      await refreshTagsMaster();
+      await refreshMemos();
+      renderList();
+      toast(`Minutes Memo Pro から ${sessionCount} 件の会議をインポートしました`, 'success');
+    } else if (fmt === 'minutespro-session') {
+      await importMppSession(data, []);
+      await refreshTagsMaster();
+      await refreshMemos();
+      renderList();
+      toast('Minutes Memo Pro の会議をインポートしました', 'success');
+    } else {
+      if (data.tags) for (const t of data.tags) await Store.put('tags', { name: t });
+      if (data.formats) for (const f of data.formats) await Store.put('formats', f);
+      if (data.memos) for (const m of data.memos) await Store.put('memos', m);
       await refreshTagsMaster();
       await refreshFormats();
       await refreshMemos();
       renderList();
       toast('データをインポートしました', 'success');
-    } catch (err) {
-      toast('ファイルの形式が正しくありません', 'error');
     }
-    refs.fileImport.value = '';
-  };
-  reader.readAsText(file);
+  } catch (err) {
+    console.error(err);
+    toast('インポート中にエラーが発生しました', 'error');
+  }
+  refs.fileImport.value = '';
 }
 
 async function copyMemoText() {

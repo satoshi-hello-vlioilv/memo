@@ -33,6 +33,10 @@
 
   <!-- ======== サイドバー：検索・一覧 ======== -->
   <aside class="sidebar">
+    <div class="sidebar-head">
+      <span class="sidebar-title"><i class="fa-solid fa-clock-rotate-left"></i> メモ一覧</span>
+      <button id="btnSidebarClose" class="icon-btn" title="サイドバーを閉じる"><i class="fa-solid fa-angles-left"></i></button>
+    </div>
     <div class="search-box">
       <i class="fa-solid fa-magnifying-glass"></i>
       <input id="searchInput" type="text" placeholder="タイトル・タグで検索" autocomplete="off">
@@ -41,7 +45,10 @@
     <div class="tagbar" id="tagBar"></div>
     <div class="list-meta">
       <span id="listCount" class="mono">0 件</span>
-      <span><i class="fa-solid fa-arrow-down-wide-short"></i> 更新順</span>
+      <div class="list-meta-right">
+        <button id="btnGroupByDate" class="icon-btn" title="日付でグループ化"><i class="fa-solid fa-calendar-days"></i></button>
+        <span><i class="fa-solid fa-arrow-down-wide-short"></i> 更新順</span>
+      </div>
     </div>
     <ul class="memo-list" id="memoList"></ul>
     <div class="list-empty" id="listEmpty" hidden="">
@@ -49,6 +56,7 @@
       <span id="listEmptyMsg">メモはまだありません。<br>「新規メモ」から作成できます。</span>
     </div>
   </aside>
+  <button id="btnSidebarOpen" class="sidebar-open-tab" title="サイドバーを開く" hidden=""><i class="fa-solid fa-angles-right"></i></button>
 
   <!-- ======== エディタ ======== -->
   <main class="editor" id="editorPane">

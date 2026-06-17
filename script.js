@@ -95,6 +95,7 @@ const state = {
   dirty: false, savedAt: null,
   query: '', tagFilter: null,
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
+  groupByDate: false, collapsedGroups: new Set(),
 };
 
 /* ============================================================
@@ -103,8 +104,8 @@ const state = {
 const refs = {};
 function collectRefs() {
   const ids = [
-    'app','btnToggleSidebar','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','tagBar','listCount','memoList','listEmpty','listEmptyMsg',
+    'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
+    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
@@ -170,6 +171,7 @@ async function loadPrefs() {
     if (typeof map.thumbSize === 'number') state.thumbSize = map.thumbSize;
     if (typeof map.panelOpen === 'boolean') state.panelOpen = map.panelOpen;
     if (typeof map.sidebarOpen === 'boolean') state.sidebarOpen = map.sidebarOpen;
+    if (typeof map.groupByDate === 'boolean') state.groupByDate = map.groupByDate;
     return map;
   } catch { return {}; }
 }
@@ -226,25 +228,58 @@ function filteredMemos() {
     })
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
+function renderMemoItem(m) {
+  const active  = m.id === state.currentId ? ' active' : '';
+  const title   = esc(m.title) || '無題のメモ';
+  const date    = isToday(m.updatedAt) ? fmtTime(m.updatedAt) : fmtDate(m.updatedAt);
+  const snippet = esc((m.body || '').replace(/\s+/g, ' ').slice(0, 64));
+  const tags    = (m.tags || []).slice(0, 3).map(t =>
+    `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
+  const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';
+  const imgs    = m.imageCount > 0
+    ? `<span class="mi-imgs"><i class="fa-regular fa-image"></i>${m.imageCount}</span>` : '';
+  return `<li class="memo-item${active}" data-id="${m.id}">
+    <div class="mi-top"><span class="mi-title">${title}</span><span class="mi-date mono">${date}</span></div>
+    ${snippet ? `<div class="mi-snippet">${snippet}</div>` : ''}
+    <div class="mi-foot"><div class="mi-tags">${tags}${more}</div>${imgs}</div>
+  </li>`;
+}
+function getDateGroupLabel(dateStr) {
+  const today     = fmtDate(Date.now());
+  const yesterday = fmtDate(Date.now() - 86400000);
+  if (dateStr === today)     return '今日';
+  if (dateStr === yesterday) return '昨日';
+  const [y, mo, d] = dateStr.split('/').map(Number);
+  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  return `${y}年${mo}月${d}日（${dayNames[new Date(y, mo - 1, d).getDay()]}）`;
+}
 function renderList() {
   const list = filteredMemos();
   refs.listCount.textContent = `${list.length} 件`;
-  refs.memoList.innerHTML = list.map(m => {
-    const active  = m.id === state.currentId ? ' active' : '';
-    const title   = esc(m.title) || '無題のメモ';
-    const date    = isToday(m.updatedAt) ? fmtTime(m.updatedAt) : fmtDate(m.updatedAt);
-    const snippet = esc((m.body || '').replace(/\s+/g, ' ').slice(0, 64));
-    const tags    = (m.tags || []).slice(0, 3).map(t =>
-      `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
-    const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';
-    const imgs    = m.imageCount > 0
-      ? `<span class="mi-imgs"><i class="fa-regular fa-image"></i>${m.imageCount}</span>` : '';
-    return `<li class="memo-item${active}" data-id="${m.id}">
-      <div class="mi-top"><span class="mi-title">${title}</span><span class="mi-date mono">${date}</span></div>
-      ${snippet ? `<div class="mi-snippet">${snippet}</div>` : ''}
-      <div class="mi-foot"><div class="mi-tags">${tags}${more}</div>${imgs}</div>
-    </li>`;
-  }).join('');
+
+  let html;
+  if (!state.groupByDate) {
+    html = list.map(m => renderMemoItem(m)).join('');
+  } else {
+    const keys = [];
+    const groupMap = new Map();
+    for (const m of list) {
+      const key = fmtDate(m.updatedAt);
+      if (!groupMap.has(key)) { groupMap.set(key, []); keys.push(key); }
+      groupMap.get(key).push(m);
+    }
+    html = keys.map(key => {
+      const memos     = groupMap.get(key);
+      const collapsed = state.collapsedGroups.has(key);
+      const chevron   = collapsed ? 'fa-chevron-right' : 'fa-chevron-down';
+      const items     = collapsed ? '' : memos.map(m => renderMemoItem(m)).join('');
+      return `<li class="date-group-header${collapsed ? ' collapsed' : ''}" data-date="${esc(key)}">` +
+        `<i class="fa-solid ${chevron}"></i>` +
+        `<span class="date-group-label">${getDateGroupLabel(key)}</span>` +
+        `<span class="date-group-count">${memos.length}</span></li>${items}`;
+    }).join('');
+  }
+  refs.memoList.innerHTML = html;
 
   const empty = list.length === 0;
   refs.listEmpty.hidden = !empty;
@@ -731,6 +766,11 @@ function togglePanel(open) {
 function applySidebarState() {
   refs.app.classList.toggle('sidebar-closed', !state.sidebarOpen);
   refs.btnToggleSidebar.title = state.sidebarOpen ? 'サイドバーを閉じる' : 'サイドバーを開く';
+  refs.btnSidebarOpen.hidden = state.sidebarOpen;
+}
+function applyGroupByDateState() {
+  refs.btnGroupByDate.classList.toggle('active', state.groupByDate);
+  refs.btnGroupByDate.title = state.groupByDate ? 'グループ化を解除' : '日付でグループ化';
 }
 function toggleSidebar() {
   state.sidebarOpen = !state.sidebarOpen;
@@ -1023,8 +1063,16 @@ function bindEvents() {
     renderList();
   });
 
-  /* --- 一覧 → メモを開く --- */
+  /* --- 一覧 → グループ折りたたみ／メモを開く --- */
   refs.memoList.addEventListener('click', async e => {
+    const header = e.target.closest('.date-group-header');
+    if (header) {
+      const date = header.dataset.date;
+      if (state.collapsedGroups.has(date)) state.collapsedGroups.delete(date);
+      else state.collapsedGroups.add(date);
+      renderList();
+      return;
+    }
     const item = e.target.closest('.memo-item');
     if (!item) return;
     const id = Number(item.dataset.id);
@@ -1128,6 +1176,15 @@ function bindEvents() {
   });
   refs.btnPanelToggle.addEventListener('click', () => togglePanel(false));
   refs.btnPanelOpen.addEventListener('click', () => togglePanel(true));
+  refs.btnSidebarClose.addEventListener('click', toggleSidebar);
+  refs.btnSidebarOpen.addEventListener('click', toggleSidebar);
+  refs.btnGroupByDate.addEventListener('click', () => {
+    state.groupByDate = !state.groupByDate;
+    state.collapsedGroups.clear();
+    applyGroupByDateState();
+    savePref('groupByDate', state.groupByDate);
+    renderList();
+  });
 
   /* --- フォーマット管理モーダル --- */
   refs.fmClose.addEventListener('click', () => { refs.formatModal.hidden = true; });
@@ -1198,6 +1255,7 @@ async function init() {
   applyThumbSize();
   applyPanelState();
   applySidebarState();
+  applyGroupByDateState();
 
   await refreshMemos();
   await refreshFormats();

@@ -1,0 +1,1060 @@
+(() => {
+'use strict';
+
+/* ============================================================
+   ユーティリティ
+   ============================================================ */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const fmtDate = ts => { const d = new Date(ts); return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`; };
+const fmtTime = ts => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtDateTime = ts => `${fmtDate(ts)} ${fmtTime(ts)}`;
+const isToday = ts => fmtDate(ts) === fmtDate(Date.now());
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const tagClass = name => {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return 'c' + (h % 6);
+};
+const parseTags = raw => {
+  const seen = new Set();
+  return String(raw).split(/[,、\s]+/).map(t => t.trim()).filter(t => {
+    if (!t || seen.has(t)) return false;
+    seen.add(t); return true;
+  });
+};
+/* 任意の input / textarea のキャレット位置へ文字列を挿入 */
+function insertAtCaret(el, text, caretOffset = null) {
+  const start = el.selectionStart ?? el.value.length;
+  const end   = el.selectionEnd ?? start;
+  el.setRangeText(text, start, end, 'end');
+  if (caretOffset !== null) {
+    const p = start + caretOffset;
+    el.setSelectionRange(p, p);
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* ============================================================
+   IndexedDB ラッパー
+   ============================================================ */
+const DB_NAME = 'memoStudioDB';
+const DB_VER  = 2;
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const rq = indexedDB.open(DB_NAME, DB_VER);
+    rq.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('memos')) {
+        const s = d.createObjectStore('memos', { keyPath: 'id', autoIncrement: true });
+        s.createIndex('updatedAt', 'updatedAt');
+      }
+      if (!d.objectStoreNames.contains('images')) {
+        const s = d.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
+        s.createIndex('memoId', 'memoId');
+      }
+      if (!d.objectStoreNames.contains('formats')) {
+        d.createObjectStore('formats', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!d.objectStoreNames.contains('prefs')) {
+        d.createObjectStore('prefs', { keyPath: 'key' });
+      }
+      if (!d.objectStoreNames.contains('tags')) {
+        d.createObjectStore('tags', { keyPath: 'name' });
+      }
+    };
+    rq.onsuccess = () => resolve(rq.result);
+    rq.onerror   = () => reject(rq.error);
+    rq.onblocked = () => reject(new Error('blocked'));
+  });
+}
+const req = r => new Promise((resolve, reject) => {
+  r.onsuccess = () => resolve(r.result);
+  r.onerror   = () => reject(r.error);
+});
+const Store = {
+  getAll : name        => req(db.transaction(name).objectStore(name).getAll()),
+  get    : (name, key) => req(db.transaction(name).objectStore(name).get(key)),
+  add    : (name, val) => req(db.transaction(name, 'readwrite').objectStore(name).add(val)),
+  put    : (name, val) => req(db.transaction(name, 'readwrite').objectStore(name).put(val)),
+  del    : (name, key) => req(db.transaction(name, 'readwrite').objectStore(name).delete(key)),
+  byIndex: (name, idx, key) => req(db.transaction(name).objectStore(name).index(idx).getAll(key)),
+};
+
+/* ============================================================
+   状態
+   ============================================================ */
+const state = {
+  memos: [], formats: [], images: [], tagsMaster: [],
+  currentId: null,
+  dirty: false, savedAt: null,
+  query: '', tagFilter: null,
+  thumbSize: 160, panelOpen: true, sidebarOpen: true,
+};
+
+/* ============================================================
+   要素参照
+   ============================================================ */
+const refs = {};
+function collectRefs() {
+  const ids = [
+    'app','btnToggleSidebar','fileImport','btnImport','btnExport',
+    'searchInput','searchClear','tagBar','listCount','memoList','listEmpty','listEmptyMsg',
+    'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
+    'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
+    'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
+    'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime',
+    'interimBar','interimText','bodyInput','charCount','saveState',
+    'btnCopyText','btnDelete','btnSave','btnNew','btnFormats',
+    'imgPanel','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
+    'thumbSize','thumbGrid','imgEmpty','dropOverlay','editorPane',
+    'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
+    'lbClose','lbStage','lbImg','lbPrev','lbNext',
+    'formatModal','fmClose','fmNew','fmList','fmEmpty','fmName','fmContent','fmDelete','fmSave',
+    'dialogRoot','dlgTitle','dlgMsg','dlgFoot','toastWrap','fatal','fatalMsg',
+  ];
+  for (const id of ids) refs[id] = document.getElementById(id);
+}
+
+/* ============================================================
+   トースト・ダイアログ（フィードバック／エラー防止）
+   ============================================================ */
+function toast(msg, type = 'info') {
+  const icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<i class="fa-solid ${icons[type]}"></i><span>${esc(msg)}</span>`;
+  refs.toastWrap.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 260);
+  }, 2800);
+}
+
+let dialogResolve = null;
+function dialog({ title, message, buttons }) {
+  return new Promise(resolve => {
+    dialogResolve = resolve;
+    refs.dlgTitle.textContent = title;
+    refs.dlgMsg.textContent = message;
+    refs.dlgFoot.innerHTML = '';
+    for (const b of buttons) {
+      const btn = document.createElement('button');
+      btn.className = `btn ${b.kind === 'primary' ? 'btn-primary' : b.kind === 'danger' ? 'btn-danger' : 'btn-quiet'}`;
+      btn.textContent = b.label;
+      btn.addEventListener('click', () => closeDialog(b.value));
+      refs.dlgFoot.appendChild(btn);
+    }
+    refs.dialogRoot.hidden = false;
+    refs.dlgFoot.querySelector('.btn-primary, .btn-danger, .btn')?.focus();
+  });
+}
+function closeDialog(value) {
+  refs.dialogRoot.hidden = true;
+  if (dialogResolve) { dialogResolve(value); dialogResolve = null; }
+}
+
+/* ============================================================
+   設定の永続化（IndexedDB prefs ストア）
+   ============================================================ */
+async function loadPrefs() {
+  try {
+    const rows = await Store.getAll('prefs');
+    const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    if (typeof map.thumbSize === 'number') state.thumbSize = map.thumbSize;
+    if (typeof map.panelOpen === 'boolean') state.panelOpen = map.panelOpen;
+    if (typeof map.sidebarOpen === 'boolean') state.sidebarOpen = map.sidebarOpen;
+    return map;
+  } catch { return {}; }
+}
+function savePref(key, value) {
+  Store.put('prefs', { key, value }).catch(() => {});
+}
+const savePrefDebounced = debounce(savePref, 350);
+
+/* ============================================================
+   タグマスタ管理・サジェスト
+   ============================================================ */
+async function refreshTagsMaster() {
+  const rows = await Store.getAll('tags');
+  state.tagsMaster = rows.map(r => r.name).sort((a, b) => a.localeCompare(b, 'ja'));
+  renderTagMasterList();
+}
+function renderTagMasterList() {
+  refs.tmList.innerHTML = state.tagsMaster.map(t => `
+    <li class="tm-list-item">
+      <span>${esc(t)}</span>
+      <button class="icon-btn btn-danger-ghost tm-del" data-tag="${esc(t)}" title="削除"><i class="fa-solid fa-trash-can"></i></button>
+    </li>
+  `).join('');
+}
+function getTagSearchWord() {
+  const parts = refs.tagsInput.value.split(/[,、]\s*/);
+  return parts[parts.length - 1];
+}
+function updateTagSuggest() {
+  const word = getTagSearchWord().trim().toLowerCase();
+  if (!word) { refs.tagsSuggest.hidden = true; return; }
+  const matches = state.tagsMaster.filter(t => t.toLowerCase().includes(word));
+  if (matches.length === 0) { refs.tagsSuggest.hidden = true; return; }
+  refs.tagsSuggest.innerHTML = matches.map(t => `<div class="sg-item" data-tag="${esc(t)}">${esc(t)}</div>`).join('');
+  refs.tagsSuggest.hidden = true;
+  requestAnimationFrame(() => { refs.tagsSuggest.hidden = false; });
+}
+
+/* ============================================================
+   メモ：一覧・検索・タグフィルタ
+   ============================================================ */
+async function refreshMemos() {
+  state.memos = await Store.getAll('memos');
+}
+function filteredMemos() {
+  const q = state.query.trim().toLowerCase();
+  return state.memos
+    .filter(m => {
+      if (state.tagFilter && !(m.tags || []).includes(state.tagFilter)) return false;
+      if (!q) return true;
+      const inTitle = (m.title || '').toLowerCase().includes(q);
+      const inTags  = (m.tags || []).some(t => t.toLowerCase().includes(q));
+      return inTitle || inTags;
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+function renderList() {
+  const list = filteredMemos();
+  refs.listCount.textContent = `${list.length} 件`;
+  refs.memoList.innerHTML = list.map(m => {
+    const active  = m.id === state.currentId ? ' active' : '';
+    const title   = esc(m.title) || '無題のメモ';
+    const date    = isToday(m.updatedAt) ? fmtTime(m.updatedAt) : fmtDate(m.updatedAt);
+    const snippet = esc((m.body || '').replace(/\s+/g, ' ').slice(0, 64));
+    const tags    = (m.tags || []).slice(0, 3).map(t =>
+      `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
+    const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';
+    const imgs    = m.imageCount > 0
+      ? `<span class="mi-imgs"><i class="fa-regular fa-image"></i>${m.imageCount}</span>` : '';
+    return `<li class="memo-item${active}" data-id="${m.id}">
+      <div class="mi-top"><span class="mi-title">${title}</span><span class="mi-date mono">${date}</span></div>
+      ${snippet ? `<div class="mi-snippet">${snippet}</div>` : ''}
+      <div class="mi-foot"><div class="mi-tags">${tags}${more}</div>${imgs}</div>
+    </li>`;
+  }).join('');
+
+  const empty = list.length === 0;
+  refs.listEmpty.hidden = !empty;
+  refs.listEmptyMsg.innerHTML = (state.query || state.tagFilter)
+    ? '条件に一致するメモがありません。<br>検索語やタグを見直してください。'
+    : 'メモはまだありません。<br>「新規メモ」から作成できます。';
+  renderTagBar();
+}
+function renderTagBar() {
+  const counts = new Map();
+  for (const m of state.memos) for (const t of (m.tags || [])) {
+    counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  const tags = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'));
+  refs.tagBar.innerHTML = tags.map(([t, n]) =>
+    `<button class="chip ${state.tagFilter === t ? 'active' : ''}" data-tag="${esc(t)}">
+       ${esc(t)}<span class="cnt">${n}</span></button>`).join('');
+}
+
+/* ============================================================
+   メモ：編集・保存・削除
+   ============================================================ */
+function collectFields() {
+  return {
+    title: refs.titleInput.value.trim(),
+    tags : parseTags(refs.tagsInput.value),
+    body : refs.bodyInput.value,
+  };
+}
+function showSheet() {
+  refs.welcome.hidden = true;
+  refs.sheet.hidden = false;
+}
+function showWelcome() {
+  refs.sheet.hidden = true;
+  refs.welcome.hidden = false;
+  state.currentId = null;
+  state.dirty = false;
+  loadImages();
+}
+function markDirty() {
+  if (!state.dirty) { state.dirty = true; renderSaveState(); }
+}
+function renderSaveState() {
+  const el = refs.saveState;
+  if (state.dirty) {
+    el.className = 'save-state dirty';
+    el.innerHTML = '<i class="fa-solid fa-circle"></i>未保存の変更があります';
+  } else if (state.savedAt) {
+    el.className = 'save-state saved';
+    el.innerHTML = `<i class="fa-solid fa-circle-check"></i>保存済み ${fmtTime(state.savedAt)}`;
+  } else {
+    el.className = 'save-state fresh';
+    el.innerHTML = '<i class="fa-regular fa-circle"></i>未保存（新規）';
+  }
+}
+function renderStamps() {
+  const m = state.memos.find(x => x.id === state.currentId);
+  refs.stampCreated.textContent = m ? fmtDateTime(m.createdAt) : '—';
+  refs.stampUpdated.textContent = m ? fmtDateTime(m.updatedAt) : '—';
+}
+function renderCharCount() {
+  refs.charCount.textContent = refs.bodyInput.value.length;
+}
+function renderTagsPreview() {
+  refs.tagsPreview.innerHTML = parseTags(refs.tagsInput.value)
+    .map(t => `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
+}
+
+async function openMemo(id) {
+  const m = await Store.get('memos', id);
+  if (!m) { toast('メモが見つかりません', 'error'); return; }
+  state.currentId = id;
+  state.dirty = false;
+  state.savedAt = m.updatedAt;
+  refs.titleInput.value = m.title || '';
+  refs.tagsInput.value  = (m.tags || []).join(', ');
+  refs.bodyInput.value  = m.body || '';
+  showSheet();
+  renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
+  await loadImages();
+  savePref('lastMemoId', id);
+}
+function newMemo() {
+  state.currentId = null;
+  state.dirty = false;
+  state.savedAt = null;
+  refs.titleInput.value = '';
+  refs.tagsInput.value = '';
+  refs.bodyInput.value = '';
+  showSheet();
+  renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
+  loadImages();
+  refs.titleInput.focus();
+}
+async function saveCurrent(silent = false) {
+  const now = Date.now();
+  const f = collectFields();
+  if (state.currentId === null) {
+    const id = await Store.add('memos', { ...f, createdAt: now, updatedAt: now, imageCount: 0 });
+    state.currentId = id;
+    savePref('lastMemoId', id);
+  } else {
+    const old = await Store.get('memos', state.currentId);
+    await Store.put('memos', { ...old, ...f, updatedAt: now });
+  }
+  state.dirty = false;
+  state.savedAt = now;
+  await refreshMemos();
+  renderList(); renderStamps(); renderSaveState();
+  if (!silent) toast('メモを保存しました', 'success');
+}
+async function deleteCurrent() {
+  if (state.currentId === null) {
+    const v = await dialog({
+      title: 'メモの破棄',
+      message: 'このメモはまだ保存されていません。入力内容を破棄しますか？',
+      buttons: [
+        { label: 'キャンセル', value: 'cancel' },
+        { label: '破棄する', value: 'ok', kind: 'danger' },
+      ],
+    });
+    if (v === 'ok') showWelcome();
+    return;
+  }
+  const m = state.memos.find(x => x.id === state.currentId);
+  const imgNote = (m?.imageCount || 0) > 0 ? `\n登録済みの画像 ${m.imageCount} 件も同時に削除されます。` : '';
+  const v = await dialog({
+    title: 'メモの削除',
+    message: `「${m?.title || '無題のメモ'}」を削除します。この操作は取り消せません。${imgNote}`,
+    buttons: [
+      { label: 'キャンセル', value: 'cancel' },
+      { label: '削除する', value: 'ok', kind: 'danger' },
+    ],
+  });
+  if (v !== 'ok') return;
+  const imgs = await Store.byIndex('images', 'memoId', state.currentId);
+  for (const img of imgs) await Store.del('images', img.id);
+  await Store.del('memos', state.currentId);
+  await refreshMemos();
+  showWelcome();
+  renderList();
+  toast('メモを削除しました', 'success');
+}
+/* 未保存変更ガード（エラー防止） */
+async function guardDirty() {
+  if (!state.dirty) return true;
+  const v = await dialog({
+    title: '未保存の変更',
+    message: '編集中のメモに未保存の変更があります。どうしますか？',
+    buttons: [
+      { label: 'キャンセル', value: 'cancel' },
+      { label: '破棄して続行', value: 'discard', kind: 'danger' },
+      { label: '保存して続行', value: 'save', kind: 'primary' },
+    ],
+  });
+  if (v === 'save')    { await saveCurrent(true); return true; }
+  if (v === 'discard') { state.dirty = false; return true; }
+  return false;
+}
+
+/* ============================================================
+   画像：登録・表示・サイズ変更（IndexedDB / Blob 管理）
+   ============================================================ */
+const urlMap = new Map();   /* image id -> objectURL */
+function revokeUrls() {
+  for (const u of urlMap.values()) URL.revokeObjectURL(u);
+  urlMap.clear();
+}
+function urlOf(img) {
+  if (!urlMap.has(img.id)) urlMap.set(img.id, URL.createObjectURL(img.blob));
+  return urlMap.get(img.id);
+}
+async function loadImages() {
+  revokeUrls();
+  state.images = state.currentId === null
+    ? []
+    : (await Store.byIndex('images', 'memoId', state.currentId)).sort((a, b) => a.id - b.id);
+  renderImages();
+}
+function renderImages() {
+  refs.imgCount.textContent = state.images.length;
+  refs.imgEmpty.hidden = state.images.length > 0;
+  refs.thumbGrid.innerHTML = state.images.map((img, i) => `
+    <figure class="thumb" data-id="${img.id}" data-index="${i}">
+      <div class="thumb-frame" title="クリックで拡大表示">
+        <img src="${urlOf(img)}" alt="${esc(img.name)}" loading="lazy">
+        <div class="thumb-acts">
+          <button class="t-act t-view" title="拡大表示"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+          <button class="t-act t-del" title="この画像を削除"><i class="fa-regular fa-trash-can"></i></button>
+        </div>
+      </div>
+      <figcaption class="thumb-name" title="${esc(img.name)}">${esc(img.name)}</figcaption>
+    </figure>`).join('');
+}
+async function updateImageCount() {
+  if (state.currentId === null) return;
+  const old = await Store.get('memos', state.currentId);
+  if (!old) return;
+  await Store.put('memos', { ...old, imageCount: state.images.length, updatedAt: Date.now() });
+  await refreshMemos();
+  renderList(); renderStamps();
+}
+async function addImageFiles(fileList, sourceName = null) {
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  if (files.length === 0) { toast('画像ファイルのみ登録できます', 'error'); return; }
+  /* 未保存の新規メモには先にレコードを作成して紐付ける */
+  if (refs.sheet.hidden) newMemo();
+  if (state.currentId === null) await saveCurrent(true);
+  const now = Date.now();
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const name = f.name && f.name !== 'image.png'
+      ? f.name
+      : `${sourceName || 'clipboard'}_${fmtDate(now).replaceAll('/','')}_${fmtTime(now).replace(':','')}${files.length > 1 ? '_' + (i+1) : ''}.png`;
+    await Store.add('images', { memoId: state.currentId, name, type: f.type, blob: f, createdAt: now });
+  }
+  await loadImages();
+  await updateImageCount();
+  toast(`画像を ${files.length} 件登録しました`, 'success');
+}
+async function removeImage(id) {
+  const img = state.images.find(x => x.id === id);
+  const v = await dialog({
+    title: '画像の削除',
+    message: `「${img?.name || '画像'}」を削除します。この操作は取り消せません。`,
+    buttons: [
+      { label: 'キャンセル', value: 'cancel' },
+      { label: '削除する', value: 'ok', kind: 'danger' },
+    ],
+  });
+  if (v !== 'ok') return;
+  await Store.del('images', id);
+  await loadImages();
+  await updateImageCount();
+  toast('画像を削除しました', 'success');
+}
+function applyThumbSize() {
+  refs.thumbGrid.style.setProperty('--thumb', state.thumbSize + 'px');
+}
+
+/* ============================================================
+   ライトボックス（拡大・縮小・パン・切替）
+   ============================================================ */
+const lb = { open: false, index: 0, scale: 1, tx: 0, ty: 0 };
+function lbApply() {
+  refs.lbImg.style.transform = `translate(${lb.tx}px, ${lb.ty}px) scale(${lb.scale})`;
+  refs.lbZoom.textContent = Math.round(lb.scale * 100) + '%';
+}
+function lbFitScale() {
+  const sw = refs.lbStage.clientWidth - 32;
+  const sh = refs.lbStage.clientHeight - 32;
+  const nw = refs.lbImg.naturalWidth || 1;
+  const nh = refs.lbImg.naturalHeight || 1;
+  return Math.min(sw / nw, sh / nh);
+}
+function lbFit() { lb.scale = lbFitScale(); lb.tx = 0; lb.ty = 0; lbApply(); }
+function lbZoomTo(s, px = 0, py = 0) {
+  const ns = Math.min(8, Math.max(0.05, s));
+  const k = ns / lb.scale;
+  lb.tx = px - (px - lb.tx) * k;
+  lb.ty = py - (py - lb.ty) * k;
+  lb.scale = ns;
+  lbApply();
+}
+function lbShow(index) {
+  if (state.images.length === 0) return;
+  lb.index = (index + state.images.length) % state.images.length;
+  const img = state.images[lb.index];
+  refs.lbName.textContent = img.name;
+  refs.lbIndex.textContent = `${lb.index + 1} / ${state.images.length}`;
+  refs.lbImg.onload = () => lbFit();
+  refs.lbImg.src = urlOf(img);
+  const multi = state.images.length > 1;
+  refs.lbPrev.hidden = !multi;
+  refs.lbNext.hidden = !multi;
+  if (refs.lightbox.hidden) { refs.lightbox.hidden = false; lb.open = true; }
+}
+function lbClose() {
+  refs.lightbox.hidden = true;
+  lb.open = false;
+  refs.lbImg.src = '';
+}
+function setupLightboxEvents() {
+  refs.lbClose.addEventListener('click', lbClose);
+  refs.lbPrev.addEventListener('click', () => lbShow(lb.index - 1));
+  refs.lbNext.addEventListener('click', () => lbShow(lb.index + 1));
+  refs.lbZoomIn.addEventListener('click', () => lbZoomTo(lb.scale * 1.25));
+  refs.lbZoomOut.addEventListener('click', () => lbZoomTo(lb.scale / 1.25));
+  refs.lbFit.addEventListener('click', lbFit);
+  refs.lbActual.addEventListener('click', () => { lb.scale = 1; lb.tx = 0; lb.ty = 0; lbApply(); });
+  refs.lbStage.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = refs.lbStage.getBoundingClientRect();
+    const px = e.clientX - rect.left - rect.width / 2;
+    const py = e.clientY - rect.top - rect.height / 2;
+    lbZoomTo(lb.scale * Math.pow(1.0016, -e.deltaY), px, py);
+  }, { passive: false });
+  /* ドラッグでパン */
+  let panning = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  refs.lbImg.addEventListener('pointerdown', e => {
+    panning = true; sx = e.clientX; sy = e.clientY; ox = lb.tx; oy = lb.ty;
+    refs.lbImg.classList.add('panning');
+    refs.lbImg.setPointerCapture(e.pointerId);
+  });
+  refs.lbImg.addEventListener('pointermove', e => {
+    if (!panning) return;
+    lb.tx = ox + (e.clientX - sx);
+    lb.ty = oy + (e.clientY - sy);
+    lbApply();
+  });
+  const endPan = () => { panning = false; refs.lbImg.classList.remove('panning'); };
+  refs.lbImg.addEventListener('pointerup', endPan);
+  refs.lbImg.addEventListener('pointercancel', endPan);
+  refs.lbStage.addEventListener('dblclick', lbFit);
+  refs.lightbox.addEventListener('click', e => {
+    if (e.target === refs.lbStage) lbClose();
+  });
+}
+
+/* ============================================================
+   音声入力（Web Speech API ／ 非対応時はグレースフル・デグラデーション）
+   ============================================================ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const speech = { rec: null, active: false, startAt: 0, timer: null };
+function setupSpeech() {
+  if (!SR) {
+    refs.btnMic.disabled = true;
+    refs.btnMic.title = 'このブラウザは音声入力に対応していません（Chrome / Edge を推奨）';
+    refs.btnMic.innerHTML = '<i class="fa-solid fa-microphone-slash"></i> 音声入力 非対応';
+    return;
+  }
+  refs.btnMic.addEventListener('click', () => speech.active ? stopSpeech() : startSpeech());
+}
+function startSpeech() {
+  const rec = new SR();
+  rec.lang = 'ja-JP';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) insertAtCaret(refs.bodyInput, r[0].transcript);
+      else interim += r[0].transcript;
+    }
+    refs.interimText.textContent = interim;
+    refs.interimBar.classList.toggle('show', interim.length > 0);
+  };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      stopSpeech();
+      toast('マイクの使用が許可されていません。ブラウザの設定を確認してください', 'error');
+    } else if (e.error === 'network') {
+      stopSpeech();
+      toast('音声認識サービスに接続できません（ネットワーク接続が必要です）', 'error');
+    }
+  };
+  /* 無音などで自動停止した場合、録音中なら再開する */
+  rec.onend = () => {
+    if (speech.active) { try { rec.start(); } catch { /* 連続再開の競合は無視 */ } }
+  };
+  try { rec.start(); } catch { toast('音声入力を開始できませんでした', 'error'); return; }
+  speech.rec = rec;
+  speech.active = true;
+  speech.startAt = Date.now();
+  refs.btnMic.classList.add('recording');
+  refs.btnMic.innerHTML = '<i class="fa-solid fa-stop"></i> 停止';
+  refs.recIndicator.hidden = false;
+  speech.timer = setInterval(() => {
+    const s = Math.floor((Date.now() - speech.startAt) / 1000);
+    refs.recTime.textContent = `${Math.floor(s / 60)}:${pad(s % 60)}`;
+  }, 500);
+  refs.bodyInput.focus();
+  toast('音声入力を開始しました。本文へ直接入力されます', 'info');
+}
+function stopSpeech() {
+  speech.active = false;
+  if (speech.rec) { try { speech.rec.stop(); } catch {} speech.rec = null; }
+  clearInterval(speech.timer);
+  refs.btnMic.classList.remove('recording');
+  refs.btnMic.innerHTML = '<i class="fa-solid fa-microphone"></i> 音声入力';
+  refs.recIndicator.hidden = true;
+  refs.recTime.textContent = '0:00';
+  refs.interimBar.classList.remove('show');
+}
+
+/* ============================================================
+   カスタムフォーマット（マスタ登録・適用）
+   ============================================================ */
+const fm = { editingId: null };
+async function refreshFormats() {
+  state.formats = (await Store.getAll('formats')).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  renderFormatSelect();
+  renderFormatList();
+}
+function renderFormatSelect() {
+  const cur = refs.formatSelect.value;
+  refs.formatSelect.innerHTML = '<option value="">フォーマットを選択</option>' +
+    state.formats.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  if ([...refs.formatSelect.options].some(o => o.value === cur)) refs.formatSelect.value = cur;
+}
+function renderFormatList() {
+  refs.fmEmpty.hidden = state.formats.length > 0;
+  refs.fmList.innerHTML = state.formats.map(f =>
+    `<li class="fm-item ${f.id === fm.editingId ? 'active' : ''}" data-id="${f.id}">
+       <i class="fa-solid fa-file-lines"></i><span>${esc(f.name)}</span></li>`).join('');
+}
+function fmLoad(id) {
+  const f = state.formats.find(x => x.id === id);
+  fm.editingId = f ? f.id : null;
+  refs.fmName.value = f ? f.name : '';
+  refs.fmContent.value = f ? f.content : '';
+  refs.fmDelete.disabled = !f;
+  renderFormatList();
+}
+async function fmSave() {
+  const name = refs.fmName.value.trim();
+  if (!name) { toast('フォーマット名を入力してください', 'error'); refs.fmName.focus(); return; }
+  const now = Date.now();
+  if (fm.editingId === null) {
+    const id = await Store.add('formats', { name, content: refs.fmContent.value, createdAt: now, updatedAt: now });
+    fm.editingId = id;
+  } else {
+    const old = await Store.get('formats', fm.editingId);
+    await Store.put('formats', { ...old, name, content: refs.fmContent.value, updatedAt: now });
+  }
+  await refreshFormats();
+  fmLoad(fm.editingId);
+  toast('フォーマットを保存しました', 'success');
+}
+async function fmDelete() {
+  if (fm.editingId === null) return;
+  const f = state.formats.find(x => x.id === fm.editingId);
+  const v = await dialog({
+    title: 'フォーマットの削除',
+    message: `「${f?.name}」を削除します。この操作は取り消せません。`,
+    buttons: [
+      { label: 'キャンセル', value: 'cancel' },
+      { label: '削除する', value: 'ok', kind: 'danger' },
+    ],
+  });
+  if (v !== 'ok') return;
+  await Store.del('formats', fm.editingId);
+  await refreshFormats();
+  fmLoad(null);
+  toast('フォーマットを削除しました', 'success');
+}
+function openFormatModal() {
+  refs.formatModal.hidden = false;
+  fmLoad(state.formats[0]?.id ?? null);
+  refs.fmName.focus();
+}
+function applyFormat() {
+  const id = Number(refs.formatSelect.value);
+  if (!id) { toast('適用するフォーマットを選択してください', 'info'); return; }
+  const f = state.formats.find(x => x.id === id);
+  if (!f) return;
+  const now = Date.now();
+  let text = f.content
+    .replaceAll('{{date}}', fmtDate(now))
+    .replaceAll('{{time}}', fmtTime(now))
+    .replaceAll('{{datetime}}', fmtDateTime(now));
+  let caret = null;
+  const ci = text.indexOf('{{cursor}}');
+  if (ci >= 0) { text = text.replace('{{cursor}}', ''); caret = ci; }
+  insertAtCaret(refs.bodyInput, text, caret);
+  refs.bodyInput.focus();
+  toast(`フォーマット「${f.name}」を適用しました`, 'success');
+}
+
+/* ============================================================
+   画像パネルの開閉
+   ============================================================ */
+function applyPanelState() {
+  refs.app.classList.toggle('panel-closed', !state.panelOpen);
+  refs.btnPanelOpen.hidden = state.panelOpen;
+}
+function togglePanel(open) {
+  state.panelOpen = open;
+  applyPanelState();
+  savePref('panelOpen', open);
+}
+function applySidebarState() {
+  refs.app.classList.toggle('sidebar-closed', !state.sidebarOpen);
+}
+function toggleSidebar() {
+  state.sidebarOpen = !state.sidebarOpen;
+  applySidebarState();
+  savePref('sidebarOpen', state.sidebarOpen);
+}
+
+/* ============================================================
+   インポート・エクスポート・コピー
+   ============================================================ */
+async function exportData() {
+  const data = {
+    memos: state.memos,
+    formats: state.formats,
+    tags: state.tagsMaster
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `MemoStudio_Backup_${fmtDate(Date.now()).replaceAll('/','')}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('データをエクスポートしました', 'success');
+}
+
+async function importData(file) {
+  if (!file) return;
+  const v = await dialog({
+    title: 'データのインポート',
+    message: '現在のデータに統合（上書きおよび追加）されます。\nよろしいですか？（画像は復元されません）',
+    buttons: [
+      { label: 'キャンセル', value: 'cancel' },
+      { label: 'インポート', value: 'ok', kind: 'danger' }
+    ]
+  });
+  if (v !== 'ok') { refs.fileImport.value = ''; return; }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.tags) {
+        for (const t of data.tags) await Store.put('tags', { name: t });
+      }
+      if (data.formats) {
+        for (const f of data.formats) await Store.put('formats', f);
+      }
+      if (data.memos) {
+        for (const m of data.memos) await Store.put('memos', m);
+      }
+      await refreshTagsMaster();
+      await refreshFormats();
+      await refreshMemos();
+      renderList();
+      toast('データをインポートしました', 'success');
+    } catch (err) {
+      toast('ファイルの形式が正しくありません', 'error');
+    }
+    refs.fileImport.value = '';
+  };
+  reader.readAsText(file);
+}
+
+async function copyMemoText() {
+  const title = refs.titleInput.value.trim() || '無題のメモ';
+  const tags = refs.tagsInput.value.trim() ? `[${refs.tagsInput.value}]` : '';
+  const body = refs.bodyInput.value;
+  const text = `■ ${title} ${tags}\n\n${body}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('テキストをコピーしました', 'success');
+  } catch (err) {
+    toast('コピーに失敗しました', 'error');
+  }
+}
+
+/* ============================================================
+   ドラッグ&ドロップ
+   ============================================================ */
+function setupDragDrop() {
+  let depth = 0;
+  const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+  window.addEventListener('dragenter', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth++;
+    refs.dropOverlay.hidden = false;
+  });
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('dragleave', e => {
+    if (!hasFiles(e)) return;
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) refs.dropOverlay.hidden = true;
+  });
+  window.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0;
+    refs.dropOverlay.hidden = true;
+    addImageFiles(e.dataTransfer.files);
+  });
+}
+
+/* ============================================================
+   イベント結線
+   ============================================================ */
+function bindEvents() {
+  /* --- トップバー アクション --- */
+  refs.btnToggleSidebar.addEventListener('click', toggleSidebar);
+  refs.btnExport.addEventListener('click', exportData);
+  refs.btnImport.addEventListener('click', () => refs.fileImport.click());
+  refs.fileImport.addEventListener('change', (e) => importData(e.target.files[0]));
+
+  /* --- 検索・フィルタ --- */
+  const onSearch = debounce(() => {
+    state.query = refs.searchInput.value;
+    refs.searchClear.hidden = state.query.length === 0;
+    renderList();
+  }, 140);
+  refs.searchInput.addEventListener('input', onSearch);
+  refs.searchClear.addEventListener('click', () => {
+    refs.searchInput.value = '';
+    state.query = '';
+    refs.searchClear.hidden = true;
+    renderList();
+    refs.searchInput.focus();
+  });
+  refs.tagBar.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const tag = chip.dataset.tag;
+    state.tagFilter = state.tagFilter === tag ? null : tag;
+    renderList();
+  });
+
+  /* --- 一覧 → メモを開く --- */
+  refs.memoList.addEventListener('click', async e => {
+    const item = e.target.closest('.memo-item');
+    if (!item) return;
+    const id = Number(item.dataset.id);
+    if (id === state.currentId) return;
+    if (await guardDirty()) openMemo(id);
+  });
+
+  /* --- 新規・フォーマット管理 --- */
+  refs.btnNew.addEventListener('click', async () => { if (await guardDirty()) newMemo(); });
+  refs.btnWelcomeNew.addEventListener('click', () => newMemo());
+  refs.btnFormats.addEventListener('click', openFormatModal);
+  refs.btnWelcomeFmt.addEventListener('click', openFormatModal);
+
+  /* --- タグマスタ管理モーダル --- */
+  refs.btnTags.addEventListener('click', () => { refs.tagModal.hidden = false; refs.tmInput.focus(); });
+  refs.tmClose.addEventListener('click', () => { refs.tagModal.hidden = true; });
+  refs.tagModal.addEventListener('click', e => { if (e.target === refs.tagModal) refs.tagModal.hidden = true; });
+  refs.tmAdd.addEventListener('click', async () => {
+    const name = refs.tmInput.value.trim();
+    if (!name) return;
+    if (!state.tagsMaster.includes(name)) {
+      await Store.put('tags', { name });
+      await refreshTagsMaster();
+      toast('タグを登録しました', 'success');
+    }
+    refs.tmInput.value = ''; refs.tmInput.focus();
+  });
+  refs.tmInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); refs.tmAdd.click(); }
+  });
+  refs.tmList.addEventListener('click', async e => {
+    const btn = e.target.closest('.tm-del');
+    if (!btn) return;
+    if (await dialog({ title: 'タグの削除', message: `マスタから「${btn.dataset.tag}」を削除しますか？\n※既存のメモからは削除されません。`, buttons: [{ label: 'キャンセル', value: 'cancel' }, { label: '削除', value: 'ok', kind: 'danger' }] }) !== 'ok') return;
+    await Store.del('tags', btn.dataset.tag);
+    await refreshTagsMaster();
+    toast('タグを削除しました', 'success');
+  });
+
+  /* --- 編集（変更検知）・タグサジェスト --- */
+  refs.titleInput.addEventListener('input', markDirty);
+  refs.tagsInput.addEventListener('input', () => { markDirty(); renderTagsPreview(); updateTagSuggest(); });
+  refs.tagsInput.addEventListener('keydown', e => { if (e.key === 'Escape') refs.tagsSuggest.hidden = true; });
+  refs.tagsSuggest.addEventListener('click', e => {
+    const item = e.target.closest('.sg-item');
+    if (!item) return;
+    const parts = refs.tagsInput.value.split(/[,、]\s*/);
+    parts.pop();
+    parts.push(item.dataset.tag);
+    refs.tagsInput.value = parts.join(', ') + (parts.length > 0 ? ', ' : '');
+    refs.tagsSuggest.hidden = true;
+    markDirty(); renderTagsPreview(); refs.tagsInput.focus();
+  });
+  document.addEventListener('click', e => {
+    if (!refs.tagsSuggest.contains(e.target) && e.target !== refs.tagsInput) {
+      refs.tagsSuggest.hidden = true;
+    }
+  });
+
+  refs.bodyInput.addEventListener('input', () => { markDirty(); renderCharCount(); });
+  /* Tab キーでタブ文字を挿入（フォーマットの段組維持） */
+  refs.bodyInput.addEventListener('keydown', e => {
+    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey) {
+      e.preventDefault();
+      insertAtCaret(refs.bodyInput, '\t');
+    }
+  });
+  /* クリップボード画像の貼り付け */
+  refs.bodyInput.addEventListener('paste', e => {
+    if (e.clipboardData?.files?.length > 0) {
+      e.preventDefault();
+      addImageFiles(e.clipboardData.files, 'clipboard');
+    }
+  });
+
+  /* --- 保存・削除・コピー --- */
+  refs.btnSave.addEventListener('click', () => saveCurrent());
+  refs.btnDelete.addEventListener('click', deleteCurrent);
+  refs.btnCopyText.addEventListener('click', copyMemoText);
+
+  /* --- フォーマット適用 --- */
+  refs.btnApplyFormat.addEventListener('click', applyFormat);
+
+  /* --- 画像 --- */
+  refs.btnAddImage.addEventListener('click', () => refs.fileInput.click());
+  refs.fileInput.addEventListener('change', () => {
+    if (refs.fileInput.files.length > 0) addImageFiles(refs.fileInput.files);
+    refs.fileInput.value = '';
+  });
+  refs.thumbGrid.addEventListener('click', e => {
+    const fig = e.target.closest('.thumb');
+    if (!fig) return;
+    const id = Number(fig.dataset.id);
+    if (e.target.closest('.t-del')) { removeImage(id); return; }
+    lbShow(Number(fig.dataset.index));
+  });
+  refs.thumbSize.addEventListener('input', () => {
+    state.thumbSize = Number(refs.thumbSize.value);
+    applyThumbSize();
+    savePrefDebounced('thumbSize', state.thumbSize);
+  });
+  refs.btnPanelToggle.addEventListener('click', () => togglePanel(false));
+  refs.btnPanelOpen.addEventListener('click', () => togglePanel(true));
+
+  /* --- フォーマット管理モーダル --- */
+  refs.fmClose.addEventListener('click', () => { refs.formatModal.hidden = true; });
+  refs.formatModal.addEventListener('click', e => {
+    if (e.target === refs.formatModal) refs.formatModal.hidden = true;
+  });
+  refs.fmNew.addEventListener('click', () => { fmLoad(null); refs.fmName.focus(); });
+  refs.fmList.addEventListener('click', e => {
+    const item = e.target.closest('.fm-item');
+    if (item) fmLoad(Number(item.dataset.id));
+  });
+  refs.fmSave.addEventListener('click', fmSave);
+  refs.fmDelete.addEventListener('click', fmDelete);
+  $$('.token').forEach(btn => btn.addEventListener('click', () => {
+    insertAtCaret(refs.fmContent, btn.dataset.token);
+    refs.fmContent.focus();
+  }));
+
+  /* --- ダイアログ背面クリック --- */
+  refs.dialogRoot.addEventListener('click', e => {
+    if (e.target === refs.dialogRoot) closeDialog('cancel');
+  });
+
+  /* --- キーボードショートカット --- */
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (!refs.dialogRoot.hidden) { closeDialog('cancel'); return; }
+      if (lb.open) { lbClose(); return; }
+      if (!refs.formatModal.hidden) { refs.formatModal.hidden = true; return; }
+      return;
+    }
+    if (lb.open) {
+      if (e.key === 'ArrowLeft')  { lbShow(lb.index - 1); return; }
+      if (e.key === 'ArrowRight') { lbShow(lb.index + 1); return; }
+      if (e.key === '+' || e.key === '=') { lbZoomTo(lb.scale * 1.25); return; }
+      if (e.key === '-') { lbZoomTo(lb.scale / 1.25); return; }
+      if (e.key === '0') { lbFit(); return; }
+      if (e.key === '1') { lb.scale = 1; lb.tx = 0; lb.ty = 0; lbApply(); return; }
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      if (!refs.sheet.hidden) saveCurrent();
+    }
+  });
+
+  /* --- ページ離脱時の未保存ガード --- */
+  window.addEventListener('beforeunload', e => {
+    if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+}
+
+/* ============================================================
+   初期化
+   ============================================================ */
+async function init() {
+  collectRefs();
+  if (!window.indexedDB) { refs.fatal.hidden = false; return; }
+  try {
+    db = await openDB();
+  } catch {
+    refs.fatal.hidden = false;
+    refs.fatalMsg.innerHTML = 'データベースを開けませんでした。<br>シークレットモードや保存領域の制限が原因の場合があります。<br>通常モードのブラウザで再度お試しください。';
+    return;
+  }
+  const prefs = await loadPrefs();
+  refs.thumbSize.value = state.thumbSize;
+  applyThumbSize();
+  applyPanelState();
+  applySidebarState();
+
+  await refreshMemos();
+  await refreshFormats();
+  await refreshTagsMaster();
+  bindEvents();
+  setupLightboxEvents();
+  setupSpeech();
+  setupDragDrop();
+  renderList();
+
+  /* 前回開いていたメモを復元 */
+  const last = prefs.lastMemoId;
+  if (typeof last === 'number' && state.memos.some(m => m.id === last)) {
+    await openMemo(last);
+  }
+}
+document.addEventListener('DOMContentLoaded', init);
+})();

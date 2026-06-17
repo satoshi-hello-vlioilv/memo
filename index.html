@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ja"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memo Studio — Field Notes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ======== トップバー ======== -->
+  <header class="topbar">
+    <div class="brand-group">
+      <button id="btnToggleSidebar" class="icon-btn-inv" title="サイドバーの開閉"><i class="fa-solid fa-bars"></i></button>
+      <div class="brand">
+        <span class="brand-mark"><i class="fa-solid fa-pen-nib"></i></span>
+        <div class="brand-text">
+          <span class="brand-name">Memo Studio</span>
+          <span class="brand-sub">FIELD NOTES</span>
+        </div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <input type="file" id="fileImport" accept=".json" hidden="">
+      <button id="btnImport" class="icon-btn-inv" title="データのインポート"><i class="fa-solid fa-file-import"></i></button>
+      <button id="btnExport" class="icon-btn-inv" title="データのエクスポート"><i class="fa-solid fa-file-export"></i></button>
+      <button id="btnTags" class="btn btn-ghost-inv"><i class="fa-solid fa-tags"></i> タグ管理</button>
+      <button id="btnFormats" class="btn btn-ghost-inv"><i class="fa-solid fa-clipboard-list"></i> フォーマット管理</button>
+      <button id="btnNew" class="btn btn-primary"><i class="fa-solid fa-plus"></i> 新規メモ</button>
+    </div>
+  </header>
+
+  <!-- ======== サイドバー：検索・一覧 ======== -->
+  <aside class="sidebar">
+    <div class="search-box">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input id="searchInput" type="text" placeholder="タイトル・タグで検索" autocomplete="off">
+      <button id="searchClear" class="icon-btn" title="検索をクリア" hidden=""><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="tagbar" id="tagBar"></div>
+    <div class="list-meta">
+      <span id="listCount" class="mono">0 件</span>
+      <span><i class="fa-solid fa-arrow-down-wide-short"></i> 更新順</span>
+    </div>
+    <ul class="memo-list" id="memoList"></ul>
+    <div class="list-empty" id="listEmpty" hidden="">
+      <i class="fa-regular fa-folder-open"></i>
+      <span id="listEmptyMsg">メモはまだありません。<br>「新規メモ」から作成できます。</span>
+    </div>
+  </aside>
+
+  <!-- ======== エディタ ======== -->
+  <main class="editor" id="editorPane">
+
+    <div class="editor-welcome" id="welcome">
+      <span class="welcome-mark"><i class="fa-solid fa-pen-nib"></i></span>
+      <h2>Memo Studio へようこそ</h2>
+      <p>左の一覧からメモを選ぶか、新しいメモを作成してください。<br>
+         フォーマットを登録しておくと、定型のメモをすばやく書き始められます。</p>
+      <div class="welcome-actions">
+        <button id="btnWelcomeNew" class="btn btn-primary"><i class="fa-solid fa-plus"></i> 新規メモを作成</button>
+        <button id="btnWelcomeFmt" class="btn btn-soft"><i class="fa-solid fa-clipboard-list"></i> フォーマットを管理</button>
+      </div>
+      <div class="welcome-hints">
+        <span><i class="fa-solid fa-magnifying-glass"></i> タイトル・タグで検索</span>
+        <span><i class="fa-solid fa-microphone"></i> 音声で直接入力</span>
+        <span><i class="fa-regular fa-images"></i> 画像を見ながら編集</span>
+      </div>
+    </div>
+
+    <div class="editor-sheet" id="sheet" hidden="">
+      <div class="sheet-head">
+        <input id="titleInput" class="title-input" type="text" placeholder="タイトルを入力" autocomplete="off">
+        <div class="meta-row">
+          <span class="stamp"><i class="fa-regular fa-calendar-plus"></i> 作成 <span id="stampCreated">—</span></span>
+          <span class="stamp"><i class="fa-regular fa-clock"></i> 更新 <span id="stampUpdated">—</span></span>
+        </div>
+        <div class="tags-row" style="position:relative;">
+          <i class="fa-solid fa-tags"></i>
+          <input id="tagsInput" type="text" placeholder="タグ（カンマ区切りで複数指定）" autocomplete="off">
+          <div class="tags-suggest" id="tagsSuggest" hidden=""></div>
+          <div class="tags-preview" id="tagsPreview"></div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="tool-group">
+          <select id="formatSelect" class="fmt-select">
+            <option value="">フォーマットを選択</option>
+          </select>
+          <button id="btnApplyFormat" class="btn btn-soft" title="選択したフォーマットをカーソル位置に挿入"><i class="fa-solid fa-stamp"></i> 適用</button>
+        </div>
+        <div class="tool-group">
+          <span id="recIndicator" class="rec-indicator" hidden="">
+            <span class="rec-dot"></span>REC <span id="recTime" class="mono">0:00</span>
+          </span>
+          <button id="btnMic" class="btn btn-soft" title="本文へ音声で直接入力します"><i class="fa-solid fa-microphone"></i> 音声入力</button>
+        </div>
+      </div>
+
+      <div class="body-wrap">
+        <div id="interimBar" class="interim-bar">
+          <i class="fa-solid fa-wave-square"></i><span id="interimText"></span>
+        </div>
+        <textarea id="bodyInput" placeholder="ここに本文を入力します。音声入力やフォーマット適用も使えます。" spellcheck="false"></textarea>
+      </div>
+
+      <div class="sheet-foot">
+        <div class="foot-left">
+          <span><span id="charCount" class="mono">0</span> 文字</span>
+          <span class="divider"></span>
+          <span id="saveState" class="save-state fresh"></span>
+        </div>
+        <div class="foot-right">
+          <button id="btnCopyText" class="btn btn-soft" title="テキストをクリップボードにコピー"><i class="fa-regular fa-copy"></i> コピー</button>
+          <button id="btnDelete" class="btn btn-danger-ghost"><i class="fa-regular fa-trash-can"></i> 削除</button>
+          <button id="btnSave" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> 保存 <kbd>Ctrl+S</kbd></button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ======== 画像パネル ======== -->
+  <aside class="imgpanel" id="imgPanel">
+    <div class="imgpanel-head">
+      <span class="panel-title"><i class="fa-regular fa-images"></i> 画像 <span id="imgCount" class="count-badge mono">0</span></span>
+      <button id="btnPanelToggle" class="icon-btn" title="画像パネルを閉じる"><i class="fa-solid fa-angles-right"></i></button>
+    </div>
+    <div class="imgpanel-tools">
+      <button id="btnAddImage" class="btn btn-soft btn-block"><i class="fa-solid fa-file-arrow-up"></i> 画像を追加</button>
+      <input type="file" id="fileInput" accept="image/*" multiple="" hidden="">
+      <div class="size-control" title="サムネイルの表示サイズ">
+        <i class="fa-solid fa-magnifying-glass-minus"></i>
+        <input type="range" id="thumbSize" min="96" max="288" step="8" value="160">
+        <i class="fa-solid fa-magnifying-glass-plus"></i>
+      </div>
+    </div>
+    <div class="thumb-grid" id="thumbGrid"></div>
+    <div class="img-empty" id="imgEmpty">
+      <i class="fa-regular fa-image"></i>
+      <span>このメモに画像はありません。<br>「画像を追加」またはドラッグ&amp;ドロップ、<br>本文への貼り付け（Ctrl+V）で登録できます。</span>
+    </div>
+  </aside>
+
+  <button id="btnPanelOpen" class="panel-open-tab" title="画像パネルを開く" hidden=""><i class="fa-regular fa-images"></i></button>
+</div>
+
+<!-- ======== ドロップオーバーレイ ======== -->
+<div class="drop-overlay" id="dropOverlay" hidden="">
+  <div class="drop-card">
+    <i class="fa-solid fa-file-arrow-up"></i>
+    画像をドロップして登録
+  </div>
+</div>
+
+<!-- ======== ライトボックス ======== -->
+<div class="lightbox" id="lightbox" hidden="">
+  <div class="lb-head">
+    <span class="lb-name" id="lbName"></span>
+    <span class="lb-index mono" id="lbIndex"></span>
+    <div class="lb-tools">
+      <button id="lbZoomOut" class="icon-btn-inv" title="縮小（-）"><i class="fa-solid fa-minus"></i></button>
+      <span class="lb-zoom-val mono" id="lbZoom">100%</span>
+      <button id="lbZoomIn" class="icon-btn-inv" title="拡大（+）"><i class="fa-solid fa-plus"></i></button>
+      <button id="lbFit" class="btn btn-ghost-inv" title="画面に合わせる（0）"><i class="fa-solid fa-compress"></i> フィット</button>
+      <button id="lbActual" class="btn btn-ghost-inv" title="原寸表示（1）"><i class="fa-solid fa-expand"></i> 100%</button>
+      <button id="lbClose" class="icon-btn-inv" title="閉じる（Esc）"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+  </div>
+  <div class="lb-stage" id="lbStage"><img id="lbImg" alt=""></div>
+  <button id="lbPrev" class="lb-nav prev" title="前の画像（←）"><i class="fa-solid fa-chevron-left"></i></button>
+  <button id="lbNext" class="lb-nav next" title="次の画像（→）"><i class="fa-solid fa-chevron-right"></i></button>
+  <span class="lb-hint">ホイールでズーム ／ ドラッグで移動 ／ ← → で切替</span>
+</div>
+
+<!-- ======== フォーマット管理モーダル ======== -->
+<div class="modal-backdrop" id="formatModal" hidden="">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3><i class="fa-solid fa-clipboard-list"></i> フォーマット管理</h3>
+      <button id="fmClose" class="icon-btn" title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="fm-body">
+      <div class="fm-list-col">
+        <div class="fm-list-head">
+          <span>登録済み</span>
+          <button id="fmNew" class="btn btn-soft" style="height:28px;padding:0 11px;font-size:12px"><i class="fa-solid fa-plus"></i> 新規</button>
+        </div>
+        <ul class="fm-list" id="fmList"></ul>
+        <div class="fm-empty" id="fmEmpty" hidden="">フォーマットはまだありません。<br>「新規」から登録してください。</div>
+      </div>
+      <div class="fm-edit-col">
+        <div class="fm-field">
+          <label for="fmName">フォーマット名</label>
+          <input id="fmName" type="text" placeholder="例）日報 ／ 品質トラブル記録 ／ 会議メモ" autocomplete="off">
+        </div>
+        <div class="fm-field grow">
+          <label for="fmContent">内容（適用時に本文へ挿入されます）</label>
+          <textarea id="fmContent" placeholder="■ 日時：{{datetime}}
+■ 場所：
+■ 内容：{{cursor}}
+■ 対応：" spellcheck="false"></textarea>
+          <div class="token-row">
+            <span class="lbl">挿入トークン：</span>
+            <button class="token" data-token="{{date}}">{{date}}</button>
+            <button class="token" data-token="{{time}}">{{time}}</button>
+            <button class="token" data-token="{{datetime}}">{{datetime}}</button>
+            <button class="token" data-token="{{cursor}}">{{cursor}}</button>
+          </div>
+          <div class="token-hint">
+            {{date}} {{time}} {{datetime}} は適用時の日付・時刻に置換されます。{{cursor}} の位置にカーソルが移動します。
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="fm-foot">
+      <button id="fmDelete" class="btn btn-danger-ghost" disabled=""><i class="fa-regular fa-trash-can"></i> 削除</button>
+      <button id="fmSave" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> フォーマットを保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== タグマスタ管理モーダル ======== -->
+<div class="modal-backdrop" id="tagModal" hidden="">
+  <div class="modal-card" style="width: 440px;">
+    <div class="modal-head">
+      <h3><i class="fa-solid fa-tags"></i> タグマスタ管理</h3>
+      <button id="tmClose" class="icon-btn" title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="dlg-body" style="display: flex; flex-direction: column; gap: 14px; max-height: 60vh;">
+      <div style="display: flex; gap: 8px;">
+        <input id="tmInput" type="text" placeholder="新しいタグを入力" style="flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-s); font-size: 13.5px; outline: none;">
+        <button id="tmAdd" class="btn btn-primary">登録</button>
+      </div>
+      <ul id="tmList" style="list-style: none; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding-right: 4px;"></ul>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 汎用ダイアログ ======== -->
+<div class="modal-backdrop" id="dialogRoot" hidden="">
+  <div class="modal-card">
+    <div class="modal-head"><h3 id="dlgTitle"></h3></div>
+    <div class="dlg-body"><div class="dlg-msg" id="dlgMsg"></div></div>
+    <div class="dlg-foot" id="dlgFoot"></div>
+  </div>
+</div>
+
+<div id="toastWrap"></div>
+
+<!-- ======== 致命的エラー表示 ======== -->
+<div class="fatal" id="fatal" hidden="">
+  <div class="fatal-card">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <h2>このブラウザでは起動できません</h2>
+    <p id="fatalMsg">データ保存に必要な IndexedDB を利用できません。<br>
+       Chrome / Edge など対応ブラウザでの利用を推奨します。<br>
+       なお、シークレットモードでは保存機能が制限される場合があります。</p>
+  </div>
+</div>
+<script src="script.js"></script>
+
+
+</body></html>

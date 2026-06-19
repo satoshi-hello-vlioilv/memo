@@ -107,11 +107,16 @@
         </div>
       </div>
 
+      <div class="view-tabs">
+        <button id="btnTabEdit" class="view-tab active"><i class="fa-solid fa-pen-to-square"></i> 編集</button>
+        <button id="btnTabPreview" class="view-tab"><i class="fa-regular fa-eye"></i> プレビュー</button>
+      </div>
       <div class="body-wrap">
         <div id="interimBar" class="interim-bar">
           <i class="fa-solid fa-wave-square"></i><span id="interimText"></span>
         </div>
-        <textarea id="bodyInput" placeholder="ここに本文を入力します。音声入力やフォーマット適用も使えます。" spellcheck="false"></textarea>
+        <textarea id="bodyInput" placeholder="ここに本文を入力します。音声入力やフォーマット適用も使えます。&#10;画像は右パネルの「本文に挿入」ボタンで本文内に配置できます（[img:ID:配置:サイズ]）。" spellcheck="false"></textarea>
+        <div id="bodyPreview" class="body-preview" hidden=""></div>
       </div>
 
       <div class="sheet-foot">
@@ -203,6 +208,10 @@
         <div class="fm-field">
           <label for="fmName">フォーマット名</label>
           <input id="fmName" type="text" placeholder="例）日報 ／ 品質トラブル記録 ／ 会議メモ" autocomplete="off">
+        </div>
+        <div class="fm-field">
+          <label for="fmTags">自動付与タグ（適用時にメモへ追加・カンマ区切り）</label>
+          <input id="fmTags" type="text" placeholder="例）日報, 業務記録" autocomplete="off">
         </div>
         <div class="fm-field grow">
           <label for="fmContent">内容（適用時に本文へ挿入されます）</label>

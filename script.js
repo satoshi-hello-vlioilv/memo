@@ -96,6 +96,7 @@ const state = {
   query: '', tagFilter: null,
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
   groupByDate: false, collapsedGroups: new Set(),
+  previewMode: false,
 };
 
 /* ============================================================
@@ -110,7 +111,8 @@ function collectRefs() {
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime',
-    'interimBar','interimText','bodyInput','charCount','saveState',
+    'btnTabEdit','btnTabPreview','interimBar','interimText','bodyInput','bodyPreview','charCount','saveState',
+    'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnFormats',
     'imgPanel','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
     'thumbSize','thumbGrid','imgEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
@@ -358,6 +360,7 @@ async function openMemo(id) {
   refs.titleInput.value = m.title || '';
   refs.tagsInput.value  = (m.tags || []).join(', ');
   refs.bodyInput.value  = m.body || '';
+  if (state.previewMode) togglePreviewMode(false);
   showSheet();
   renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
   await loadImages();
@@ -370,6 +373,7 @@ function newMemo() {
   refs.titleInput.value = '';
   refs.tagsInput.value = '';
   refs.bodyInput.value = '';
+  if (state.previewMode) togglePreviewMode(false);
   showSheet();
   renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
   loadImages();
@@ -453,6 +457,74 @@ function urlOf(img) {
   if (!urlMap.has(img.id)) urlMap.set(img.id, URL.createObjectURL(img.blob));
   return urlMap.get(img.id);
 }
+/* ============================================================
+   インライン画像（本文内マーカー）
+   ============================================================ */
+const IMG_MARKER_RE = /\[img:(\d+)(?::([lcr]))?(?::([sml]))?\]/g;
+
+function insertImageRef(imgId) {
+  if (state.previewMode) togglePreviewMode(false);
+  insertAtCaret(refs.bodyInput, `[img:${imgId}:c:m]`);
+  refs.bodyInput.focus();
+  markDirty();
+}
+
+function renderBodyPreview() {
+  const text = refs.bodyInput.value;
+  let html = '<div class="preview-body">';
+  let last = 0;
+  IMG_MARKER_RE.lastIndex = 0;
+  let m;
+  while ((m = IMG_MARKER_RE.exec(text)) !== null) {
+    const chunk = text.slice(last, m.index);
+    if (chunk) html += esc(chunk).replace(/\n/g, '<br>\n');
+    const id    = Number(m[1]);
+    const align = m[2] || 'c';
+    const size  = m[3] || 'm';
+    const img   = state.images.find(x => x.id === id);
+    const rawMarker = m[0];
+    if (img) {
+      const alignLabel = { l: '左', c: '中央', r: '右' }[align] || '中央';
+      html += `<span class="bimg" data-marker="${esc(rawMarker)}" data-id="${id}" data-align="${align}" data-size="${size}">` +
+        `<img src="${urlOf(img)}" class="bimg__img" alt="${esc(img.name)}" title="${esc(img.name)}">` +
+        `<span class="bimg__ctrl">` +
+        `<button class="bimg__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
+        `<button class="bimg__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
+        `<button class="bimg__pos${align==='r'?' on':''}" data-a="r" title="右寄せ"><i class="fa-solid fa-align-right"></i></button>` +
+        `<select class="bimg__size" title="サイズ">` +
+        `<option value="s"${size==='s'?' selected':''}>小(120px)</option>` +
+        `<option value="m"${size==='m'?' selected':''}>中(240px)</option>` +
+        `<option value="l"${size==='l'?' selected':''}>大(全幅)</option>` +
+        `</select></span></span>`;
+    } else {
+      html += `<span class="bimg--missing">[img:${id} — 画像未登録]</span>`;
+    }
+    last = m.index + m[0].length;
+  }
+  const rest = text.slice(last);
+  if (rest) html += esc(rest).replace(/\n/g, '<br>\n');
+  html += '</div>';
+  refs.bodyPreview.innerHTML = html;
+}
+
+function updateImgMarker(wrap, newAlign, newSize) {
+  const oldMarker = wrap.dataset.marker;
+  const id = wrap.dataset.id;
+  const newMarker = `[img:${id}:${newAlign}:${newSize}]`;
+  refs.bodyInput.value = refs.bodyInput.value.replace(oldMarker, newMarker);
+  markDirty();
+  renderBodyPreview();
+}
+
+function togglePreviewMode(preview) {
+  state.previewMode = preview;
+  refs.bodyInput.hidden = preview;
+  refs.bodyPreview.hidden = !preview;
+  refs.btnTabEdit.classList.toggle('active', !preview);
+  refs.btnTabPreview.classList.toggle('active', preview);
+  if (preview) renderBodyPreview();
+}
+
 async function loadImages() {
   revokeUrls();
   state.images = state.currentId === null
@@ -468,11 +540,13 @@ function renderImages() {
       <div class="thumb-frame" title="クリックで拡大表示">
         <img src="${urlOf(img)}" alt="${esc(img.name)}" loading="lazy">
         <div class="thumb-acts">
+          <button class="t-act t-insert" title="本文に挿入"><i class="fa-solid fa-text-width"></i></button>
           <button class="t-act t-view" title="拡大表示"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
           <button class="t-act t-del" title="この画像を削除"><i class="fa-regular fa-trash-can"></i></button>
         </div>
       </div>
       <figcaption class="thumb-name" title="${esc(img.name)}">${esc(img.name)}</figcaption>
+      <button class="t-insert" title="本文に挿入"><i class="fa-solid fa-text-width"></i> 本文に挿入</button>
     </figure>`).join('');
 }
 async function updateImageCount() {
@@ -692,6 +766,7 @@ function fmLoad(id) {
   const f = state.formats.find(x => x.id === id);
   fm.editingId = f ? f.id : null;
   refs.fmName.value = f ? f.name : '';
+  refs.fmTags.value = f && f.tags ? f.tags.join(', ') : '';
   refs.fmContent.value = f ? f.content : '';
   refs.fmDelete.disabled = !f;
   renderFormatList();
@@ -699,13 +774,14 @@ function fmLoad(id) {
 async function fmSave() {
   const name = refs.fmName.value.trim();
   if (!name) { toast('フォーマット名を入力してください', 'error'); refs.fmName.focus(); return; }
-  const now = Date.now();
+  const now  = Date.now();
+  const tags = parseTags(refs.fmTags.value);
   if (fm.editingId === null) {
-    const id = await Store.add('formats', { name, content: refs.fmContent.value, createdAt: now, updatedAt: now });
+    const id = await Store.add('formats', { name, tags, content: refs.fmContent.value, createdAt: now, updatedAt: now });
     fm.editingId = id;
   } else {
     const old = await Store.get('formats', fm.editingId);
-    await Store.put('formats', { ...old, name, content: refs.fmContent.value, updatedAt: now });
+    await Store.put('formats', { ...old, name, tags, content: refs.fmContent.value, updatedAt: now });
   }
   await refreshFormats();
   fmLoad(fm.editingId);
@@ -738,6 +814,21 @@ function applyFormat() {
   if (!id) { toast('適用するフォーマットを選択してください', 'info'); return; }
   const f = state.formats.find(x => x.id === id);
   if (!f) return;
+
+  /* タイトルが未入力ならフォーマット名を自動入力 */
+  if (!refs.titleInput.value.trim() && f.name) {
+    refs.titleInput.value = f.name;
+    markDirty();
+  }
+
+  /* フォーマットのタグをメモのタグへマージ（重複排除） */
+  if (f.tags && f.tags.length > 0) {
+    const merged = [...new Set([...parseTags(refs.tagsInput.value), ...f.tags])];
+    refs.tagsInput.value = merged.join(', ');
+    markDirty();
+    renderTagsPreview();
+  }
+
   const now = Date.now();
   let text = f.content
     .replaceAll('{{date}}', fmtDate(now))
@@ -1140,11 +1231,16 @@ function bindEvents() {
       insertAtCaret(refs.bodyInput, '\t');
     }
   });
-  /* クリップボード画像の貼り付け */
-  refs.bodyInput.addEventListener('paste', e => {
-    if (e.clipboardData?.files?.length > 0) {
+  /* クリップボード画像の貼り付け（bodyInput フォーカス外でも動作） */
+  window.addEventListener('paste', e => {
+    if (refs.sheet.hidden) return;
+    const items = [...(e.clipboardData?.items || [])];
+    const imageFiles = items
+      .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
+      .map(it => it.getAsFile()).filter(Boolean);
+    if (imageFiles.length > 0) {
       e.preventDefault();
-      addImageFiles(e.clipboardData.files, 'clipboard');
+      addImageFiles(imageFiles, 'clipboard');
     }
   });
 
@@ -1166,7 +1262,8 @@ function bindEvents() {
     const fig = e.target.closest('.thumb');
     if (!fig) return;
     const id = Number(fig.dataset.id);
-    if (e.target.closest('.t-del')) { removeImage(id); return; }
+    if (e.target.closest('.t-del'))    { removeImage(id); return; }
+    if (e.target.closest('.t-insert')) { insertImageRef(id); return; }
     lbShow(Number(fig.dataset.index));
   });
   refs.thumbSize.addEventListener('input', () => {
@@ -1178,6 +1275,26 @@ function bindEvents() {
   refs.btnPanelOpen.addEventListener('click', () => togglePanel(true));
   refs.btnSidebarClose.addEventListener('click', toggleSidebar);
   refs.btnSidebarOpen.addEventListener('click', toggleSidebar);
+
+  /* --- 編集 / プレビュー タブ --- */
+  refs.btnTabEdit.addEventListener('click', () => togglePreviewMode(false));
+  refs.btnTabPreview.addEventListener('click', () => togglePreviewMode(true));
+
+  /* --- プレビュー内の画像位置・サイズ変更 --- */
+  refs.bodyPreview.addEventListener('click', e => {
+    const posBtn = e.target.closest('.bimg__pos');
+    if (posBtn) {
+      const wrap = posBtn.closest('.bimg');
+      updateImgMarker(wrap, posBtn.dataset.a, wrap.dataset.size);
+    }
+  });
+  refs.bodyPreview.addEventListener('change', e => {
+    const sel = e.target.closest('.bimg__size');
+    if (sel) {
+      const wrap = sel.closest('.bimg');
+      updateImgMarker(wrap, wrap.dataset.align, sel.value);
+    }
+  });
   refs.btnGroupByDate.addEventListener('click', () => {
     state.groupByDate = !state.groupByDate;
     state.collapsedGroups.clear();

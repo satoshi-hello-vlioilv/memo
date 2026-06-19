@@ -416,6 +416,90 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 @keyframes recPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
 
+/* 編集 / プレビュー タブ */
+.view-tabs{
+  display:flex;gap:0;
+  padding:0 16px;
+  border-bottom:1px dashed var(--line-strong);
+  background:#FCFBF7;
+  flex-shrink:0;
+}
+.view-tab{
+  padding:6px 14px;font-size:12.5px;font-weight:600;
+  color:var(--text-sub);
+  border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  transition:color .12s,border-color .12s;
+  display:flex;align-items:center;gap:6px;
+}
+.view-tab i{font-size:11px}
+.view-tab:hover{color:var(--text)}
+.view-tab.active{color:var(--primary-deep);border-bottom-color:var(--primary)}
+
+/* 本文プレビュー */
+.body-preview{
+  flex:1;overflow-y:auto;min-height:0;
+  padding:16px 24px 24px;
+  font-size:15px;line-height:1.9;letter-spacing:.01em;
+  color:var(--text);word-wrap:break-word;
+}
+.preview-body::after{content:"";display:block;clear:both}
+
+/* インライン画像 */
+.bimg{
+  position:relative;
+  max-width:100%;
+  line-height:0;
+}
+.bimg[data-align="l"]{float:left;margin:4px 16px 8px 0}
+.bimg[data-align="c"]{display:block;margin:10px auto;text-align:center}
+.bimg[data-align="r"]{float:right;margin:4px 0 8px 16px}
+.bimg[data-size="s"] .bimg__img{width:120px}
+.bimg[data-size="m"] .bimg__img{width:240px;max-width:100%}
+.bimg[data-size="l"] .bimg__img{width:100%;max-width:100%}
+.bimg__img{display:block;height:auto;border-radius:6px;border:1px solid var(--line)}
+.bimg__ctrl{
+  position:absolute;bottom:6px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:4px;
+  background:rgba(14,26,33,.78);
+  border-radius:7px;padding:4px 8px;
+  opacity:0;transition:opacity .15s;pointer-events:none;
+  white-space:nowrap;
+}
+.bimg:hover .bimg__ctrl{opacity:1;pointer-events:all}
+.bimg__pos{
+  width:26px;height:26px;border-radius:5px;
+  display:inline-flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,.7);font-size:11px;
+  transition:background-color .12s,color .12s;
+}
+.bimg__pos:hover,.bimg__pos.on{background:rgba(255,255,255,.2);color:#fff}
+.bimg__size{
+  height:26px;padding:0 6px;
+  background:rgba(255,255,255,.12);
+  border:1px solid rgba(255,255,255,.2);
+  border-radius:5px;
+  color:#fff;font-size:11px;
+  cursor:pointer;outline:none;
+}
+.bimg--missing{
+  display:inline-block;font-size:11.5px;color:var(--rec);
+  background:var(--rec-soft);border:1px dashed #EBC4BA;
+  border-radius:4px;padding:2px 8px;
+}
+
+/* サムネイルの「本文に挿入」ボタン */
+.t-insert{
+  display:none;width:100%;justify-content:center;align-items:center;gap:5px;
+  font-size:11px;font-weight:600;
+  height:26px;border-radius:6px;
+  background:var(--primary-soft);color:var(--primary-deep);
+  border:1px solid var(--primary-line);
+  transition:background-color .12s;
+  margin-top:2px;
+}
+.t-insert:hover{background:#D2E7E1}
+
 .body-wrap{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
 .interim-bar{
   position:absolute;top:10px;left:20px;right:20px;z-index:2;
@@ -510,6 +594,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
   opacity:0;transition:opacity .15s;
 }
 .thumb-frame:hover .thumb-acts{opacity:1}
+.thumb:hover .t-insert{display:flex}
 .t-act{
   width:34px;height:34px;border-radius:8px;
   display:inline-flex;align-items:center;justify-content:center;

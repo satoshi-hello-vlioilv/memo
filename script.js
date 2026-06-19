@@ -96,7 +96,6 @@ const state = {
   query: '', tagFilter: null,
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
   groupByDate: false, collapsedGroups: new Set(),
-  previewMode: false,
 };
 
 /* ============================================================
@@ -111,7 +110,7 @@ function collectRefs() {
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime',
-    'btnTabEdit','btnTabPreview','interimBar','interimText','bodyInput','bodyPreview','charCount','saveState',
+    'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnFormats',
     'imgPanel','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
@@ -308,7 +307,7 @@ function collectFields() {
   return {
     title: refs.titleInput.value.trim(),
     tags : parseTags(refs.tagsInput.value),
-    body : refs.bodyInput.value,
+    body : serializeBody(),
   };
 }
 function showSheet() {
@@ -344,7 +343,7 @@ function renderStamps() {
   refs.stampUpdated.textContent = m ? fmtDateTime(m.updatedAt) : '—';
 }
 function renderCharCount() {
-  refs.charCount.textContent = refs.bodyInput.value.length;
+  refs.charCount.textContent = serializeBody().length;
 }
 function renderTagsPreview() {
   refs.tagsPreview.innerHTML = parseTags(refs.tagsInput.value)
@@ -359,11 +358,11 @@ async function openMemo(id) {
   state.savedAt = m.updatedAt;
   refs.titleInput.value = m.title || '';
   refs.tagsInput.value  = (m.tags || []).join(', ');
-  refs.bodyInput.value  = m.body || '';
-  if (state.previewMode) togglePreviewMode(false);
   showSheet();
-  renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
+  renderStamps(); renderSaveState(); renderTagsPreview(); renderList();
   await loadImages();
+  deserializeBody(m.body || '');
+  renderCharCount();
   savePref('lastMemoId', id);
 }
 function newMemo() {
@@ -372,8 +371,7 @@ function newMemo() {
   state.savedAt = null;
   refs.titleInput.value = '';
   refs.tagsInput.value = '';
-  refs.bodyInput.value = '';
-  if (state.previewMode) togglePreviewMode(false);
+  refs.bodyInput.innerHTML = '';
   showSheet();
   renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
   loadImages();
@@ -458,71 +456,143 @@ function urlOf(img) {
   return urlMap.get(img.id);
 }
 /* ============================================================
-   インライン画像（本文内マーカー）
+   インライン画像（contenteditable 内）
    ============================================================ */
 const IMG_MARKER_RE = /\[img:(\d+)(?::([lcr]))?(?::([sml]))?\]/g;
 
-function insertImageRef(imgId) {
-  if (state.previewMode) togglePreviewMode(false);
-  insertAtCaret(refs.bodyInput, `[img:${imgId}:c:m]`);
-  refs.bodyInput.focus();
-  markDirty();
+function createInlineImg(imgId, align, size) {
+  const img = state.images.find(x => x.id === imgId);
+  const wrap = document.createElement('span');
+  wrap.className = 'body-img';
+  wrap.contentEditable = 'false';
+  wrap.dataset.id = imgId;
+  wrap.dataset.align = align || 'c';
+  wrap.dataset.size = size || 'm';
+  if (img) {
+    wrap.innerHTML =
+      `<img src="${urlOf(img)}" class="body-img__img" alt="${esc(img.name)}">` +
+      `<span class="body-img__ctrl">` +
+        `<button class="body-img__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
+        `<button class="body-img__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
+        `<button class="body-img__pos${align==='r'?' on':''}" data-a="r" title="右寄せ"><i class="fa-solid fa-align-right"></i></button>` +
+        `<select class="body-img__size" title="サイズ">` +
+          `<option value="s"${size==='s'?' selected':''}>小</option>` +
+          `<option value="m"${size==='m'?' selected':''}>中</option>` +
+          `<option value="l"${size==='l'?' selected':''}>大</option>` +
+        `</select>` +
+        `<button class="body-img__del" title="削除"><i class="fa-solid fa-xmark"></i></button>` +
+      `</span>`;
+  } else {
+    wrap.innerHTML = `<span class="body-img--missing">[img:${imgId} — 画像未登録]</span>`;
+  }
+  return wrap;
 }
 
-function renderBodyPreview() {
-  const text = refs.bodyInput.value;
-  let html = '<div class="preview-body">';
-  let last = 0;
-  IMG_MARKER_RE.lastIndex = 0;
-  let m;
-  while ((m = IMG_MARKER_RE.exec(text)) !== null) {
-    const chunk = text.slice(last, m.index);
-    if (chunk) html += esc(chunk).replace(/\n/g, '<br>\n');
-    const id    = Number(m[1]);
-    const align = m[2] || 'c';
-    const size  = m[3] || 'm';
-    const img   = state.images.find(x => x.id === id);
-    const rawMarker = m[0];
-    if (img) {
-      const alignLabel = { l: '左', c: '中央', r: '右' }[align] || '中央';
-      html += `<span class="bimg" data-marker="${esc(rawMarker)}" data-id="${id}" data-align="${align}" data-size="${size}">` +
-        `<img src="${urlOf(img)}" class="bimg__img" alt="${esc(img.name)}" title="${esc(img.name)}">` +
-        `<span class="bimg__ctrl">` +
-        `<button class="bimg__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
-        `<button class="bimg__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
-        `<button class="bimg__pos${align==='r'?' on':''}" data-a="r" title="右寄せ"><i class="fa-solid fa-align-right"></i></button>` +
-        `<select class="bimg__size" title="サイズ">` +
-        `<option value="s"${size==='s'?' selected':''}>小(120px)</option>` +
-        `<option value="m"${size==='m'?' selected':''}>中(240px)</option>` +
-        `<option value="l"${size==='l'?' selected':''}>大(全幅)</option>` +
-        `</select></span></span>`;
-    } else {
-      html += `<span class="bimg--missing">[img:${id} — 画像未登録]</span>`;
-    }
+function addTextWithBreaks(parent, text) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) parent.appendChild(document.createElement('br'));
+    if (lines[i]) parent.appendChild(document.createTextNode(lines[i]));
+  }
+}
+
+function textToFragment(text) {
+  const frag = document.createDocumentFragment();
+  const re = /\[img:(\d+)(?::([lcr]))?(?::([sml]))?\]/g;
+  let last = 0, m;
+  re.lastIndex = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) addTextWithBreaks(frag, text.slice(last, m.index));
+    frag.appendChild(createInlineImg(Number(m[1]), m[2] || 'c', m[3] || 'm'));
     last = m.index + m[0].length;
   }
-  const rest = text.slice(last);
-  if (rest) html += esc(rest).replace(/\n/g, '<br>\n');
-  html += '</div>';
-  refs.bodyPreview.innerHTML = html;
+  if (last < text.length) addTextWithBreaks(frag, text.slice(last));
+  return frag;
 }
 
-function updateImgMarker(wrap, newAlign, newSize) {
-  const oldMarker = wrap.dataset.marker;
-  const id = wrap.dataset.id;
-  const newMarker = `[img:${id}:${newAlign}:${newSize}]`;
-  refs.bodyInput.value = refs.bodyInput.value.replace(oldMarker, newMarker);
-  markDirty();
-  renderBodyPreview();
+function serializeBody() {
+  let result = '';
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      result += node.textContent;
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.classList && node.classList.contains('body-img')) {
+        result += `[img:${node.dataset.id}:${node.dataset.align || 'c'}:${node.dataset.size || 'm'}]`;
+      } else if (node.tagName === 'BR') {
+        result += '\n';
+      } else if (node.tagName === 'DIV' || node.tagName === 'P') {
+        if (result.length > 0 && !result.endsWith('\n')) result += '\n';
+        for (const c of node.childNodes) walk(c);
+        if (!result.endsWith('\n')) result += '\n';
+      } else {
+        for (const c of node.childNodes) walk(c);
+      }
+    }
+  }
+  for (const c of refs.bodyInput.childNodes) walk(c);
+  return result.replace(/\n$/, '');
 }
 
-function togglePreviewMode(preview) {
-  state.previewMode = preview;
-  refs.bodyInput.hidden = preview;
-  refs.bodyPreview.hidden = !preview;
-  refs.btnTabEdit.classList.toggle('active', !preview);
-  refs.btnTabPreview.classList.toggle('active', preview);
-  if (preview) renderBodyPreview();
+function deserializeBody(text) {
+  refs.bodyInput.innerHTML = '';
+  if (!text) return;
+  refs.bodyInput.appendChild(textToFragment(text));
+}
+
+function insertBodyText(text, caretAt = null) {
+  refs.bodyInput.focus();
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) {
+    refs.bodyInput.appendChild(textToFragment(text));
+    markDirty(); renderCharCount();
+    return;
+  }
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const frag = document.createDocumentFragment();
+  if (caretAt !== null) {
+    addTextWithBreaks(frag, text.slice(0, caretAt));
+    const caretMarker = document.createTextNode('');
+    frag.appendChild(caretMarker);
+    addTextWithBreaks(frag, text.slice(caretAt));
+    range.insertNode(frag);
+    const nr = document.createRange();
+    nr.setStartAfter(caretMarker);
+    nr.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+  } else {
+    addTextWithBreaks(frag, text);
+    const last = frag.lastChild;
+    range.insertNode(frag);
+    if (last) {
+      const nr = document.createRange();
+      nr.setStartAfter(last);
+      nr.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(nr);
+    }
+  }
+  markDirty(); renderCharCount();
+}
+
+function insertImageRef(imgId) {
+  refs.bodyInput.focus();
+  const imgEl = createInlineImg(imgId, 'c', 'm');
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0) {
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(imgEl);
+    const nr = document.createRange();
+    nr.setStartAfter(imgEl);
+    nr.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+  } else {
+    refs.bodyInput.appendChild(imgEl);
+  }
+  markDirty(); renderCharCount();
 }
 
 async function loadImages() {
@@ -697,7 +767,7 @@ function startSpeech() {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
-      if (r.isFinal) insertAtCaret(refs.bodyInput, r[0].transcript);
+      if (r.isFinal) insertBodyText(r[0].transcript);
       else interim += r[0].transcript;
     }
     refs.interimText.textContent = interim;
@@ -837,7 +907,7 @@ function applyFormat() {
   let caret = null;
   const ci = text.indexOf('{{cursor}}');
   if (ci >= 0) { text = text.replace('{{cursor}}', ''); caret = ci; }
-  insertAtCaret(refs.bodyInput, text, caret);
+  insertBodyText(text, caret);
   refs.bodyInput.focus();
   toast(`フォーマット「${f.name}」を適用しました`, 'success');
 }
@@ -1033,7 +1103,7 @@ async function importData(file) {
 async function copyMemoText() {
   const title = refs.titleInput.value.trim() || '無題のメモ';
   const tags = refs.tagsInput.value.trim() ? `[${refs.tagsInput.value}]` : '';
-  const body = refs.bodyInput.value;
+  const body = serializeBody();
   const text = `■ ${title} ${tags}\n\n${body}`;
   try {
     await navigator.clipboard.writeText(text);
@@ -1224,11 +1294,37 @@ function bindEvents() {
   });
 
   refs.bodyInput.addEventListener('input', () => { markDirty(); renderCharCount(); });
-  /* Tab キーでタブ文字を挿入（フォーマットの段組維持） */
   refs.bodyInput.addEventListener('keydown', e => {
     if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
-      insertAtCaret(refs.bodyInput, '\t');
+      insertBodyText('\t');
+    }
+  });
+  /* 画像コントロールのクリックでキャレットが動かないよう防止 */
+  refs.bodyInput.addEventListener('mousedown', e => {
+    if (e.target.closest('.body-img__ctrl')) e.preventDefault();
+  });
+  refs.bodyInput.addEventListener('click', e => {
+    const posBtn = e.target.closest('.body-img__pos');
+    if (posBtn) {
+      const wrap = posBtn.closest('.body-img');
+      if (!wrap) return;
+      wrap.dataset.align = posBtn.dataset.a;
+      $$('.body-img__pos', wrap).forEach(b => b.classList.toggle('on', b.dataset.a === posBtn.dataset.a));
+      markDirty();
+      return;
+    }
+    const delBtn = e.target.closest('.body-img__del');
+    if (delBtn) {
+      const wrap = delBtn.closest('.body-img');
+      if (wrap) { wrap.remove(); markDirty(); renderCharCount(); }
+    }
+  });
+  refs.bodyInput.addEventListener('change', e => {
+    const sel = e.target.closest('.body-img__size');
+    if (sel) {
+      const wrap = sel.closest('.body-img');
+      if (wrap) { wrap.dataset.size = sel.value; markDirty(); }
     }
   });
   /* クリップボード画像の貼り付け（bodyInput フォーカス外でも動作） */
@@ -1276,25 +1372,6 @@ function bindEvents() {
   refs.btnSidebarClose.addEventListener('click', toggleSidebar);
   refs.btnSidebarOpen.addEventListener('click', toggleSidebar);
 
-  /* --- 編集 / プレビュー タブ --- */
-  refs.btnTabEdit.addEventListener('click', () => togglePreviewMode(false));
-  refs.btnTabPreview.addEventListener('click', () => togglePreviewMode(true));
-
-  /* --- プレビュー内の画像位置・サイズ変更 --- */
-  refs.bodyPreview.addEventListener('click', e => {
-    const posBtn = e.target.closest('.bimg__pos');
-    if (posBtn) {
-      const wrap = posBtn.closest('.bimg');
-      updateImgMarker(wrap, posBtn.dataset.a, wrap.dataset.size);
-    }
-  });
-  refs.bodyPreview.addEventListener('change', e => {
-    const sel = e.target.closest('.bimg__size');
-    if (sel) {
-      const wrap = sel.closest('.bimg');
-      updateImgMarker(wrap, wrap.dataset.align, sel.value);
-    }
-  });
   refs.btnGroupByDate.addEventListener('click', () => {
     state.groupByDate = !state.groupByDate;
     state.collapsedGroups.clear();

@@ -107,16 +107,15 @@
         </div>
       </div>
 
-      <div class="view-tabs">
-        <button id="btnTabEdit" class="view-tab active"><i class="fa-solid fa-pen-to-square"></i> 編集</button>
-        <button id="btnTabPreview" class="view-tab"><i class="fa-regular fa-eye"></i> プレビュー</button>
-      </div>
       <div class="body-wrap">
         <div id="interimBar" class="interim-bar">
           <i class="fa-solid fa-wave-square"></i><span id="interimText"></span>
         </div>
-        <textarea id="bodyInput" placeholder="ここに本文を入力します。音声入力やフォーマット適用も使えます。&#10;画像は右パネルの「本文に挿入」ボタンで本文内に配置できます（[img:ID:配置:サイズ]）。" spellcheck="false"></textarea>
-        <div id="bodyPreview" class="body-preview" hidden=""></div>
+        <div id="bodyInput"
+             class="body-editable"
+             contenteditable="true"
+             spellcheck="false"
+             data-placeholder="ここに本文を入力します。&#10;画像パネルの「本文に挿入」で画像をインラインに配置できます。"></div>
       </div>
 
       <div class="sheet-foot">

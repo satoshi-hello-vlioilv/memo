@@ -95,7 +95,7 @@ const state = {
   dirty: false, savedAt: null,
   query: '', tagFilter: null,
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
-  groupByDate: false, collapsedGroups: new Set(),
+  groupByDate: false, expandedGroups: new Set(),
 };
 
 /* ============================================================
@@ -271,7 +271,7 @@ function renderList() {
     }
     html = keys.map(key => {
       const memos     = groupMap.get(key);
-      const collapsed = state.collapsedGroups.has(key);
+      const collapsed = !state.expandedGroups.has(key);
       const chevron   = collapsed ? 'fa-chevron-right' : 'fa-chevron-down';
       const items     = collapsed ? '' : memos.map(m => renderMemoItem(m)).join('');
       return `<li class="date-group-header${collapsed ? ' collapsed' : ''}" data-date="${esc(key)}">` +
@@ -1229,8 +1229,8 @@ function bindEvents() {
     const header = e.target.closest('.date-group-header');
     if (header) {
       const date = header.dataset.date;
-      if (state.collapsedGroups.has(date)) state.collapsedGroups.delete(date);
-      else state.collapsedGroups.add(date);
+      if (state.expandedGroups.has(date)) state.expandedGroups.delete(date);
+      else state.expandedGroups.add(date);
       renderList();
       return;
     }
@@ -1374,7 +1374,7 @@ function bindEvents() {
 
   refs.btnGroupByDate.addEventListener('click', () => {
     state.groupByDate = !state.groupByDate;
-    state.collapsedGroups.clear();
+    state.expandedGroups.clear();
     applyGroupByDateState();
     savePref('groupByDate', state.groupByDate);
     renderList();

@@ -459,6 +459,7 @@ function urlOf(img) {
    インライン画像（contenteditable 内）
    ============================================================ */
 const IMG_MARKER_RE = /\[img:(\d+)(?::([lcr]))?(?::([sml]))?\]/g;
+let draggedImg = null;   /* 本文内でドラッグ移動中の画像要素 */
 
 function createInlineImg(imgId, align, size) {
   const img = state.images.find(x => x.id === imgId);
@@ -468,9 +469,11 @@ function createInlineImg(imgId, align, size) {
   wrap.dataset.id = imgId;
   wrap.dataset.align = align || 'c';
   wrap.dataset.size = size || 'm';
+  wrap.setAttribute('draggable', 'true');
+  wrap.title = 'ドラッグで本文内の位置を移動';
   if (img) {
     wrap.innerHTML =
-      `<img src="${urlOf(img)}" class="body-img__img" alt="${esc(img.name)}">` +
+      `<img src="${urlOf(img)}" class="body-img__img" alt="${esc(img.name)}" draggable="false">` +
       `<span class="body-img__ctrl">` +
         `<button class="body-img__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
         `<button class="body-img__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
@@ -537,6 +540,37 @@ function deserializeBody(text) {
   refs.bodyInput.innerHTML = '';
   if (!text) return;
   refs.bodyInput.appendChild(textToFragment(text));
+  ensureTrailingEditable();
+}
+
+/* 末尾が（編集不可な）画像のままだと、その後ろにキャレットを
+   置けず文字入力できなくなる。末尾画像の後ろに改行を補い、
+   常に編集可能な行が残るようにする。 */
+function ensureTrailingEditable() {
+  const last = refs.bodyInput.lastChild;
+  if (last && last.nodeType === Node.ELEMENT_NODE &&
+      last.classList && last.classList.contains('body-img')) {
+    refs.bodyInput.appendChild(document.createElement('br'));
+  }
+}
+
+function placeCaretAfter(node) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.setStartAfter(node);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function caretRangeFromPoint(x, y) {
+  if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+  if (document.caretPositionFromPoint) {
+    const p = document.caretPositionFromPoint(x, y);
+    if (p) { const r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); return r; }
+  }
+  return null;
 }
 
 function insertBodyText(text, caretAt = null) {
@@ -580,18 +614,18 @@ function insertImageRef(imgId) {
   refs.bodyInput.focus();
   const imgEl = createInlineImg(imgId, 'c', 'm');
   const sel = window.getSelection();
-  if (sel && sel.rangeCount > 0) {
-    const range = sel.getRangeAt(0);
+  let range;
+  if (sel && sel.rangeCount > 0 && refs.bodyInput.contains(sel.getRangeAt(0).startContainer)) {
+    range = sel.getRangeAt(0);
     range.deleteContents();
-    range.insertNode(imgEl);
-    const nr = document.createRange();
-    nr.setStartAfter(imgEl);
-    nr.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(nr);
   } else {
-    refs.bodyInput.appendChild(imgEl);
+    range = document.createRange();
+    range.selectNodeContents(refs.bodyInput);
+    range.collapse(false);
   }
+  range.insertNode(imgEl);
+  ensureTrailingEditable();
+  placeCaretAfter(imgEl);
   markDirty(); renderCharCount();
 }
 
@@ -1327,6 +1361,36 @@ function bindEvents() {
       if (wrap) { wrap.dataset.size = sel.value; markDirty(); }
     }
   });
+  /* --- 本文内画像のドラッグ移動（右パネルへのコピーと区別） --- */
+  refs.bodyInput.addEventListener('dragstart', e => {
+    const wrap = e.target.closest('.body-img');
+    if (!wrap) return;                                  /* 画像以外は通常動作 */
+    if (e.target.closest('.body-img__ctrl')) { e.preventDefault(); return; }
+    draggedImg = wrap;
+    e.dataTransfer.effectAllowed = 'move';
+    /* ファイルとして扱われないよう内部用データのみ設定 */
+    try { e.dataTransfer.setData('application/x-bodyimg', String(wrap.dataset.id)); } catch {}
+  });
+  refs.bodyInput.addEventListener('dragover', e => {
+    if (!draggedImg) return;                            /* 本文内画像の移動時のみ許可 */
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+  refs.bodyInput.addEventListener('drop', e => {
+    if (!draggedImg) return;
+    e.preventDefault();
+    const range = caretRangeFromPoint(e.clientX, e.clientY);
+    if (range && !draggedImg.contains(range.startContainer)) {
+      range.insertNode(draggedImg);
+    } else {
+      refs.bodyInput.appendChild(draggedImg);
+    }
+    ensureTrailingEditable();
+    placeCaretAfter(draggedImg);
+    markDirty(); renderCharCount();
+    draggedImg = null;
+  });
+  document.addEventListener('dragend', () => { draggedImg = null; });
   /* クリップボード画像の貼り付け（bodyInput フォーカス外でも動作） */
   window.addEventListener('paste', e => {
     if (refs.sheet.hidden) return;

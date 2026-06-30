@@ -218,7 +218,17 @@ button:disabled{cursor:not-allowed;opacity:.45}
   letter-spacing:.04em;
   flex-shrink:0;
 }
-.list-meta-right{display:flex;align-items:center;gap:4px}
+.list-meta-right{display:flex;align-items:center;gap:6px}
+.group-field-select{
+  height:24px;padding:0 22px 0 8px;
+  border:1px solid var(--ink-700);border-radius:5px;
+  background:var(--ink-850) url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238FA3AE' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 7px center;
+  color:var(--inv-text);font-size:11px;font-weight:600;letter-spacing:.02em;
+  appearance:none;outline:none;cursor:pointer;
+  transition:border-color .15s;
+}
+.group-field-select:focus{border-color:var(--primary)}
+.group-field-select option{background:var(--ink-900);color:var(--inv-text)}
 .list-meta .icon-btn{width:26px;height:26px;font-size:12px;color:var(--inv-sub)}
 .list-meta .icon-btn:hover{background:var(--ink-800);color:var(--inv-text)}
 .list-meta .icon-btn.active{color:var(--primary);background:rgba(19,121,108,.18)}
@@ -767,6 +777,37 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .btn-quiet:hover{background:var(--paper-deep);color:var(--text)}
 .btn-danger{background:var(--rec);color:#fff}
 .btn-danger:hover{background:var(--rec-deep)}
+
+/* ============================================================
+   本文エディタの右クリックメニュー
+   ============================================================ */
+.ctx-menu{
+  position:fixed;z-index:600;
+  min-width:236px;max-width:280px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:10px;
+  box-shadow:var(--shadow-2);
+  padding:6px;
+  display:flex;flex-direction:column;gap:1px;
+}
+.ctx-item{
+  display:flex;align-items:center;gap:10px;
+  width:100%;padding:7px 10px;border-radius:6px;
+  color:var(--text);font-size:13px;text-align:left;
+  transition:background-color .12s,color .12s;
+}
+.ctx-item > i{width:16px;text-align:center;color:var(--text-sub);font-size:12px;flex-shrink:0}
+.ctx-label{flex:1;white-space:nowrap}
+.ctx-hint{color:var(--text-sub);font-size:11px;flex-shrink:0}
+.ctx-item:hover:not(:disabled){background:var(--primary-soft);color:var(--primary-deep)}
+.ctx-item:hover:not(:disabled) > i{color:var(--primary)}
+.ctx-item:disabled{opacity:.38;cursor:not-allowed}
+.ctx-sep{height:1px;background:var(--line);margin:5px 6px}
+.ctx-head{
+  padding:3px 10px 5px;font-size:10px;font-weight:700;
+  letter-spacing:.06em;color:var(--text-sub);text-transform:uppercase;
+}
 
 /* ============================================================
    トースト

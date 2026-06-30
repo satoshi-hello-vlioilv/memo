@@ -95,7 +95,7 @@ const state = {
   dirty: false, savedAt: null,
   query: '', tagFilter: null,
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
-  groupByDate: false, expandedGroups: new Set(),
+  groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
 };
 
 /* ============================================================
@@ -105,7 +105,7 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','ctxMenu','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
@@ -173,6 +173,7 @@ async function loadPrefs() {
     if (typeof map.panelOpen === 'boolean') state.panelOpen = map.panelOpen;
     if (typeof map.sidebarOpen === 'boolean') state.sidebarOpen = map.sidebarOpen;
     if (typeof map.groupByDate === 'boolean') state.groupByDate = map.groupByDate;
+    if (map.groupDateField === 'createdAt' || map.groupDateField === 'updatedAt') state.groupDateField = map.groupDateField;
     return map;
   } catch { return {}; }
 }
@@ -232,7 +233,8 @@ function filteredMemos() {
 function renderMemoItem(m) {
   const active  = m.id === state.currentId ? ' active' : '';
   const title   = esc(m.title) || '無題のメモ';
-  const date    = isToday(m.updatedAt) ? fmtTime(m.updatedAt) : fmtDate(m.updatedAt);
+  const dts     = state.groupByDate ? (m[state.groupDateField] ?? m.updatedAt) : m.updatedAt;
+  const date    = isToday(dts) ? fmtTime(dts) : fmtDate(dts);
   const snippet = esc((m.body || '').replace(/\s+/g, ' ').slice(0, 64));
   const tags    = (m.tags || []).slice(0, 3).map(t =>
     `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
@@ -262,10 +264,12 @@ function renderList() {
   if (!state.groupByDate) {
     html = list.map(m => renderMemoItem(m)).join('');
   } else {
+    const field = state.groupDateField;
     const keys = [];
     const groupMap = new Map();
-    for (const m of list) {
-      const key = fmtDate(m.updatedAt);
+    const grouped = [...list].sort((a, b) => b[field] - a[field]);
+    for (const m of grouped) {
+      const key = fmtDate(m[field]);
       if (!groupMap.has(key)) { groupMap.set(key, []); keys.push(key); }
       groupMap.get(key).push(m);
     }
@@ -629,6 +633,109 @@ function insertImageRef(imgId) {
   markDirty(); renderCharCount();
 }
 
+/* ============================================================
+   本文エディタの右クリックメニュー（執筆補助）
+   ============================================================ */
+let ctxRange = null;   /* メニューを開いた時点の選択範囲を保持 */
+
+const toHalfWidth = s => s
+  .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+  .replace(/　/g, ' ');
+const toFullWidth = s => s
+  .replace(/[A-Za-z0-9]/g, c => String.fromCharCode(c.charCodeAt(0) + 0xFEE0))
+  .replace(/ /g, '　');
+
+/* 現在の選択範囲を置換し、結果を選択状態で残す */
+function replaceSelection(newText) {
+  refs.bodyInput.focus();
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const node = document.createTextNode(newText);
+  range.insertNode(node);
+  const nr = document.createRange();
+  nr.selectNodeContents(node);
+  sel.removeAllRanges();
+  sel.addRange(nr);
+  markDirty(); renderCharCount();
+}
+
+function buildCtxMenu(hasSel) {
+  const now = Date.now();
+  const groups = [
+    { head: '挿入', items: [
+      { act: 'insDate',     icon: 'fa-calendar-day',   label: '日付を挿入',       hint: fmtDate(now) },
+      { act: 'insTime',     icon: 'fa-clock',          label: '時刻を挿入',       hint: fmtTime(now) },
+      { act: 'insDateTime', icon: 'fa-calendar-check', label: '日時を挿入' },
+      { act: 'insBullet',   icon: 'fa-list-ul',        label: '箇条書き「・」' },
+      { act: 'insCheck',    icon: 'fa-square-check',   label: 'チェックボックス' },
+      { act: 'insRule',     icon: 'fa-grip-lines',     label: '区切り線' },
+    ]},
+    { head: '選択テキスト', items: [
+      { act: 'wrapKagi',  icon: 'fa-quote-left', label: '「」で囲む' },
+      { act: 'wrapParen', icon: 'fa-quote-left', label: '（）で囲む' },
+      { act: 'toHalf',    icon: 'fa-down-left-and-up-right-to-center', label: '全角 → 半角', need: true },
+      { act: 'toFull',    icon: 'fa-up-right-and-down-left-from-center', label: '半角 → 全角', need: true },
+      { act: 'count',     icon: 'fa-calculator', label: '文字数を数える', need: true },
+    ]},
+    { head: 'その他', items: [
+      { act: 'addImage', icon: 'fa-image', label: '画像を登録…' },
+    ]},
+  ];
+  let html = '';
+  groups.forEach((g, gi) => {
+    if (gi > 0) html += '<div class="ctx-sep"></div>';
+    html += `<div class="ctx-head">${g.head}</div>`;
+    for (const it of g.items) {
+      const dis = it.need && !hasSel ? ' disabled' : '';
+      html += `<button class="ctx-item" data-act="${it.act}"${dis}>` +
+        `<i class="fa-solid ${it.icon}"></i><span class="ctx-label">${it.label}</span>` +
+        (it.hint ? `<span class="ctx-hint mono">${esc(it.hint)}</span>` : '') +
+        `</button>`;
+    }
+  });
+  return html;
+}
+
+function openCtxMenu(x, y) {
+  const sel = window.getSelection();
+  const inEditor = sel && sel.rangeCount > 0 && refs.bodyInput.contains(sel.getRangeAt(0).startContainer);
+  ctxRange = inEditor ? sel.getRangeAt(0).cloneRange() : null;
+  const hasSel = !!(inEditor && !sel.isCollapsed && sel.toString().length > 0);
+  refs.ctxMenu.innerHTML = buildCtxMenu(hasSel);
+  refs.ctxMenu.hidden = false;
+  const mw = refs.ctxMenu.offsetWidth, mh = refs.ctxMenu.offsetHeight;
+  const px = Math.min(x, window.innerWidth - mw - 8);
+  const py = Math.min(y, window.innerHeight - mh - 8);
+  refs.ctxMenu.style.left = Math.max(8, px) + 'px';
+  refs.ctxMenu.style.top  = Math.max(8, py) + 'px';
+}
+function hideCtxMenu() { if (!refs.ctxMenu.hidden) refs.ctxMenu.hidden = true; }
+
+function runCtxAction(act) {
+  refs.bodyInput.focus();
+  const sel = window.getSelection();
+  if (ctxRange) { try { sel.removeAllRanges(); sel.addRange(ctxRange); } catch {} }
+  const selText = sel ? sel.toString() : '';
+  const now = Date.now();
+  switch (act) {
+    case 'insDate':     insertBodyText(fmtDate(now)); break;
+    case 'insTime':     insertBodyText(fmtTime(now)); break;
+    case 'insDateTime': insertBodyText(fmtDateTime(now)); break;
+    case 'insBullet':   insertBodyText('・'); break;
+    case 'insCheck':    insertBodyText('☐ '); break;
+    case 'insRule':     insertBodyText('\n──────────────\n'); break;
+    case 'wrapKagi':    selText ? replaceSelection('「' + selText + '」') : insertBodyText('「」', 1); break;
+    case 'wrapParen':   selText ? replaceSelection('（' + selText + '）') : insertBodyText('（）', 1); break;
+    case 'toHalf':      if (selText) replaceSelection(toHalfWidth(selText)); break;
+    case 'toFull':      if (selText) replaceSelection(toFullWidth(selText)); break;
+    case 'count':       toast(`選択中の文字数：${selText.length} 文字`, 'info'); break;
+    case 'addImage':    refs.fileInput.click(); break;
+  }
+  hideCtxMenu();
+}
+
 async function loadImages() {
   revokeUrls();
   state.images = state.currentId === null
@@ -966,6 +1073,8 @@ function applySidebarState() {
 function applyGroupByDateState() {
   refs.btnGroupByDate.classList.toggle('active', state.groupByDate);
   refs.btnGroupByDate.title = state.groupByDate ? 'グループ化を解除' : '日付でグループ化';
+  refs.groupFieldSelect.hidden = !state.groupByDate;
+  refs.groupFieldSelect.value = state.groupDateField;
 }
 function toggleSidebar() {
   state.sidebarOpen = !state.sidebarOpen;
@@ -1391,6 +1500,24 @@ function bindEvents() {
     draggedImg = null;
   });
   document.addEventListener('dragend', () => { draggedImg = null; });
+
+  /* --- 本文エディタの右クリックメニュー（執筆補助） --- */
+  refs.bodyInput.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    openCtxMenu(e.clientX, e.clientY);
+  });
+  refs.ctxMenu.addEventListener('mousedown', e => e.preventDefault());   /* 選択・フォーカス維持 */
+  refs.ctxMenu.addEventListener('click', e => {
+    const btn = e.target.closest('.ctx-item');
+    if (!btn || btn.disabled) return;
+    runCtxAction(btn.dataset.act);
+  });
+  window.addEventListener('mousedown', e => {
+    if (!refs.ctxMenu.hidden && !refs.ctxMenu.contains(e.target)) hideCtxMenu();
+  });
+  window.addEventListener('resize', hideCtxMenu);
+  refs.bodyInput.addEventListener('scroll', hideCtxMenu);
+
   /* クリップボード画像の貼り付け（bodyInput フォーカス外でも動作） */
   window.addEventListener('paste', e => {
     if (refs.sheet.hidden) return;
@@ -1443,6 +1570,12 @@ function bindEvents() {
     savePref('groupByDate', state.groupByDate);
     renderList();
   });
+  refs.groupFieldSelect.addEventListener('change', () => {
+    state.groupDateField = refs.groupFieldSelect.value;
+    state.expandedGroups.clear();
+    savePref('groupDateField', state.groupDateField);
+    renderList();
+  });
 
   /* --- フォーマット管理モーダル --- */
   refs.fmClose.addEventListener('click', () => { refs.formatModal.hidden = true; });
@@ -1469,6 +1602,7 @@ function bindEvents() {
   /* --- キーボードショートカット --- */
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (!refs.ctxMenu.hidden) { hideCtxMenu(); return; }
       if (!refs.dialogRoot.hidden) { closeDialog('cancel'); return; }
       if (lb.open) { lbClose(); return; }
       if (!refs.formatModal.hidden) { refs.formatModal.hidden = true; return; }

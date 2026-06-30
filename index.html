@@ -46,6 +46,10 @@
     <div class="list-meta">
       <span id="listCount" class="mono">0 件</span>
       <div class="list-meta-right">
+        <select id="groupFieldSelect" class="group-field-select" title="まとめる日付の種類" hidden="">
+          <option value="createdAt">作成日</option>
+          <option value="updatedAt">更新日</option>
+        </select>
         <button id="btnGroupByDate" class="icon-btn" title="日付でグループ化"><i class="fa-solid fa-calendar-days"></i></button>
         <span><i class="fa-solid fa-arrow-down-wide-short"></i> 更新順</span>
       </div>
@@ -263,6 +267,9 @@
     <div class="dlg-foot" id="dlgFoot"></div>
   </div>
 </div>
+
+<!-- ======== 本文エディタの右クリックメニュー ======== -->
+<div id="ctxMenu" class="ctx-menu" hidden=""></div>
 
 <div id="toastWrap"></div>
 

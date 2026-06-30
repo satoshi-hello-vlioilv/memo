@@ -105,7 +105,7 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','ctxMenu','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
@@ -575,6 +575,54 @@ function caretRangeFromPoint(x, y) {
     if (p) { const r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); return r; }
   }
   return null;
+}
+
+/* ドラッグ中の挿入位置を求め、縦線インジケータで可視化する */
+function getCaretIndicator(x, y) {
+  const range = caretRangeFromPoint(x, y);
+  if (!range) return null;
+  const r = range.getBoundingClientRect();
+  if (r && r.height > 0) return { left: r.left, top: r.top, height: r.height };
+  const cont = range.startContainer;
+  /* テキストノード内：行矩形の左右端にキャレットを置く */
+  if (cont.nodeType === Node.TEXT_NODE && cont.textContent.length) {
+    const tr = document.createRange();
+    tr.selectNodeContents(cont);
+    const rects = tr.getClientRects();
+    const rr = rects[rects.length - 1] || tr.getBoundingClientRect();
+    if (rr && rr.height > 0) {
+      const atEnd = range.startOffset >= cont.textContent.length;
+      return { left: atEnd ? rr.right : rr.left, top: rr.top, height: rr.height };
+    }
+  }
+  /* 要素境界（画像や改行の前後）：隣接要素の端に合わせる */
+  if (cont.nodeType === Node.ELEMENT_NODE) {
+    const after  = cont.childNodes[range.startOffset];
+    const before = cont.childNodes[range.startOffset - 1];
+    const ref = (after && after.nodeType === Node.ELEMENT_NODE) ? after
+              : (before && before.nodeType === Node.ELEMENT_NODE) ? before : null;
+    if (ref) {
+      const rr = ref.getBoundingClientRect();
+      if (rr.height > 0) return { left: after ? rr.left : rr.right, top: rr.top, height: rr.height };
+    }
+  }
+  const er = refs.bodyInput.getBoundingClientRect();
+  return { left: Math.min(Math.max(x, er.left + 2), er.right - 2), top: er.top + 6, height: 24 };
+}
+function showDropCaret(x, y) {
+  const info = getCaretIndicator(x, y);
+  if (!info) return;
+  const el = refs.dropCaret;
+  el.style.left   = Math.round(info.left) + 'px';
+  el.style.top    = Math.round(info.top) + 'px';
+  el.style.height = Math.round(info.height) + 'px';
+  el.hidden = false;
+}
+function hideDropCaret() { if (refs.dropCaret && !refs.dropCaret.hidden) refs.dropCaret.hidden = true; }
+function endImgDrag() {
+  if (draggedImg) draggedImg.classList.remove('dragging');
+  draggedImg = null;
+  hideDropCaret();
 }
 
 function insertBodyText(text, caretAt = null) {
@@ -1470,7 +1518,7 @@ function bindEvents() {
       if (wrap) { wrap.dataset.size = sel.value; markDirty(); }
     }
   });
-  /* --- 本文内画像のドラッグ移動（右パネルへのコピーと区別） --- */
+  /* --- 本文内画像のドラッグ移動（挿入位置をゴーストで可視化） --- */
   refs.bodyInput.addEventListener('dragstart', e => {
     const wrap = e.target.closest('.body-img');
     if (!wrap) return;                                  /* 画像以外は通常動作 */
@@ -1479,11 +1527,18 @@ function bindEvents() {
     e.dataTransfer.effectAllowed = 'move';
     /* ファイルとして扱われないよう内部用データのみ設定 */
     try { e.dataTransfer.setData('application/x-bodyimg', String(wrap.dataset.id)); } catch {}
+    /* ドラッグ画像の確定後に元要素を半透明化（スナップショットには影響させない） */
+    setTimeout(() => { if (draggedImg) draggedImg.classList.add('dragging'); }, 0);
   });
   refs.bodyInput.addEventListener('dragover', e => {
     if (!draggedImg) return;                            /* 本文内画像の移動時のみ許可 */
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    showDropCaret(e.clientX, e.clientY);                /* 挿入予定位置を可視化 */
+  });
+  refs.bodyInput.addEventListener('dragleave', e => {
+    if (!draggedImg) return;
+    if (!refs.bodyInput.contains(e.relatedTarget)) hideDropCaret();
   });
   refs.bodyInput.addEventListener('drop', e => {
     if (!draggedImg) return;
@@ -1496,10 +1551,10 @@ function bindEvents() {
     }
     ensureTrailingEditable();
     placeCaretAfter(draggedImg);
+    endImgDrag();
     markDirty(); renderCharCount();
-    draggedImg = null;
   });
-  document.addEventListener('dragend', () => { draggedImg = null; });
+  document.addEventListener('dragend', endImgDrag);
 
   /* --- 本文エディタの右クリックメニュー（執筆補助） --- */
   refs.bodyInput.addEventListener('contextmenu', e => {

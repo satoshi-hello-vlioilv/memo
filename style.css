@@ -437,6 +437,21 @@ button:disabled{cursor:not-allowed;opacity:.45}
   user-select:none;
 }
 .body-img:active{cursor:grabbing}
+.body-img.dragging{opacity:.35;outline:2px dashed var(--primary);outline-offset:2px}
+/* ドラッグ中の挿入位置インジケータ（ゴーストキャレット） */
+.drop-caret{
+  position:fixed;z-index:550;width:3px;margin-left:-1px;
+  background:var(--primary);border-radius:2px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.55),0 0 9px rgba(19,121,108,.75);
+  pointer-events:none;
+  animation:dropCaretPulse .9s ease-in-out infinite;
+}
+.drop-caret::before{
+  content:"";position:absolute;top:-4px;left:50%;transform:translateX(-50%);
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid var(--primary);
+}
+@keyframes dropCaretPulse{0%,100%{opacity:1}50%{opacity:.5}}
 .body-img[data-align="l"]{float:left;margin:4px 16px 8px 0}
 .body-img[data-align="c"]{display:block;margin:10px auto;text-align:center;float:none}
 .body-img[data-align="r"]{float:right;margin:4px 0 8px 16px}

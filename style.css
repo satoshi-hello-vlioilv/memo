@@ -229,6 +229,15 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 .group-field-select:focus{border-color:var(--primary)}
 .group-field-select option{background:var(--ink-900);color:var(--inv-text)}
+.sort-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  height:24px;padding:0 8px;border-radius:5px;
+  color:var(--inv-sub);font-size:11px;font-weight:600;letter-spacing:.02em;
+  white-space:nowrap;
+  transition:background-color .15s,color .15s;
+}
+.sort-btn:hover{background:var(--ink-800);color:var(--inv-text)}
+.sort-btn i{font-size:10px}
 .list-meta .icon-btn{width:26px;height:26px;font-size:12px;color:var(--inv-sub)}
 .list-meta .icon-btn:hover{background:var(--ink-800);color:var(--inv-text)}
 .list-meta .icon-btn.active{color:var(--primary);background:rgba(19,121,108,.18)}

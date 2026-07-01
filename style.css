@@ -475,6 +475,14 @@ button:disabled{cursor:not-allowed;opacity:.45}
   transition:background-color .12s,color .12s;
 }
 .body-img__pos:hover,.body-img__pos.on{background:rgba(255,255,255,.2);color:#fff}
+.body-img__zoom{
+  width:26px;height:26px;border-radius:5px;
+  display:inline-flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,.7);font-size:11px;
+  transition:background-color .12s,color .12s;
+}
+.body-img__zoom:hover{background:rgba(255,255,255,.2);color:#fff}
+.body-img__div{width:1px;height:16px;background:rgba(255,255,255,.22);margin:0 2px}
 .body-img__size{
   height:26px;padding:0 6px;
   background:rgba(255,255,255,.12);

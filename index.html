@@ -25,8 +25,7 @@
       <input type="file" id="fileImport" accept=".json" hidden="">
       <button id="btnImport" class="icon-btn-inv" title="データのインポート"><i class="fa-solid fa-file-import"></i></button>
       <button id="btnExport" class="icon-btn-inv" title="データのエクスポート"><i class="fa-solid fa-file-export"></i></button>
-      <button id="btnTags" class="btn btn-ghost-inv"><i class="fa-solid fa-tags"></i> タグ管理</button>
-      <button id="btnFormats" class="btn btn-ghost-inv"><i class="fa-solid fa-clipboard-list"></i> フォーマット管理</button>
+      <button id="btnManage" class="btn btn-ghost-inv"><i class="fa-solid fa-sliders"></i> 管理</button>
       <button id="btnNew" class="btn btn-primary"><i class="fa-solid fa-plus"></i> 新規メモ</button>
     </div>
   </header>
@@ -239,14 +238,25 @@
 ■ 内容：{{cursor}}
 ■ 対応：" spellcheck="false"></textarea>
               <div class="token-row">
-                <span class="lbl">挿入トークン：</span>
-                <button class="token" data-token="{{date}}">{{date}}</button>
-                <button class="token" data-token="{{time}}">{{time}}</button>
-                <button class="token" data-token="{{datetime}}">{{datetime}}</button>
-                <button class="token" data-token="{{cursor}}">{{cursor}}</button>
+                <span class="lbl">日付・時刻：</span>
+                <button class="token" data-token="{{date}}" title="日付（例：2026/07/01）">{{date}}</button>
+                <button class="token" data-token="{{time}}" title="時刻（例：14:05）">{{time}}</button>
+                <button class="token" data-token="{{datetime}}" title="日付と時刻（例：2026/07/01 14:05）">{{datetime}}</button>
+                <button class="token" data-token="{{weekday}}" title="曜日（例：水）">{{weekday}}</button>
+                <button class="token" data-token="{{year}}" title="年（例：2026）">{{year}}</button>
+                <button class="token" data-token="{{month}}" title="月（例：7）">{{month}}</button>
+                <button class="token" data-token="{{day}}" title="日（例：1）">{{day}}</button>
+                <button class="token" data-token="{{yesterday}}" title="前日の日付">{{yesterday}}</button>
+                <button class="token" data-token="{{tomorrow}}" title="翌日の日付">{{tomorrow}}</button>
+              </div>
+              <div class="token-row">
+                <span class="lbl">メモ情報：</span>
+                <button class="token" data-token="{{title}}" title="現在のタイトル">{{title}}</button>
+                <button class="token" data-token="{{tags}}" title="現在のタグ（カンマ区切り）">{{tags}}</button>
+                <button class="token" data-token="{{cursor}}" title="適用後にカーソルを置く位置">{{cursor}}</button>
               </div>
               <div class="token-hint">
-                {{date}} {{time}} {{datetime}} は適用時の日付・時刻に置換されます。{{cursor}} の位置にカーソルが移動します。
+                日付・時刻系のトークンは適用した瞬間の値に、{{title}} と {{tags}} は現在の入力内容に置き換わります。{{cursor}} の位置には適用後にカーソルが移動します。
               </div>
             </div>
           </div>

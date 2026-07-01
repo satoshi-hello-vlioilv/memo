@@ -12,6 +12,8 @@ const pad = n => String(n).padStart(2, '0');
 const fmtDate = ts => { const d = new Date(ts); return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`; };
 const fmtTime = ts => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const fmtDateTime = ts => `${fmtDate(ts)} ${fmtTime(ts)}`;
+const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+const fmtWeekday = ts => DAY_NAMES[new Date(ts).getDay()];
 const isToday = ts => fmtDate(ts) === fmtDate(Date.now());
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const tagClass = name => {
@@ -109,11 +111,11 @@ function collectRefs() {
     'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
-    'btnTags','tmInput','tmAdd','tmList','tmEmpty',
+    'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime',
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
-    'btnCopyText','btnDelete','btnSave','btnNew','btnFormats',
+    'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
     'imgPanel','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
     'thumbSize','thumbGrid','imgEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
@@ -267,8 +269,7 @@ function getDateGroupLabel(dateStr) {
   if (dateStr === today)     return '今日';
   if (dateStr === yesterday) return '昨日';
   const [y, mo, d] = dateStr.split('/').map(Number);
-  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-  return `${y}年${mo}月${d}日（${dayNames[new Date(y, mo - 1, d).getDay()]}）`;
+  return `${y}年${mo}月${d}日（${DAY_NAMES[new Date(y, mo - 1, d).getDay()]}）`;
 }
 function renderList() {
   const list = filteredMemos();
@@ -1135,6 +1136,23 @@ function openManageModal(section) {
     refs.tmInput.focus();
   }
 }
+/* フォーマット本文内の {{key}} を適用時点の値に解決する（{{cursor}} は除く） */
+function resolveFormatTokens(now) {
+  const d = new Date(now);
+  return {
+    date: fmtDate(now),
+    time: fmtTime(now),
+    datetime: fmtDateTime(now),
+    weekday: fmtWeekday(now),
+    year: String(d.getFullYear()),
+    month: String(d.getMonth() + 1),
+    day: String(d.getDate()),
+    yesterday: fmtDate(now - 86400000),
+    tomorrow: fmtDate(now + 86400000),
+    title: refs.titleInput.value.trim(),
+    tags: parseTags(refs.tagsInput.value).join(', '),
+  };
+}
 function applyFormat() {
   const id = Number(refs.formatSelect.value);
   if (!id) { toast('適用するフォーマットを選択してください', 'info'); return; }
@@ -1156,10 +1174,9 @@ function applyFormat() {
   }
 
   const now = Date.now();
-  let text = f.content
-    .replaceAll('{{date}}', fmtDate(now))
-    .replaceAll('{{time}}', fmtTime(now))
-    .replaceAll('{{datetime}}', fmtDateTime(now));
+  const values = resolveFormatTokens(now);
+  let text = f.content;
+  for (const key in values) text = text.replaceAll(`{{${key}}}`, values[key]);
   let caret = null;
   const ci = text.indexOf('{{cursor}}');
   if (ci >= 0) { text = text.replace('{{cursor}}', ''); caret = ci; }
@@ -1511,9 +1528,8 @@ function bindEvents() {
   /* --- 新規・管理画面（フォーマット／タグ） --- */
   refs.btnNew.addEventListener('click', async () => { if (await guardDirty()) newMemo(); });
   refs.btnWelcomeNew.addEventListener('click', () => newMemo());
-  refs.btnFormats.addEventListener('click', () => openManageModal('formats'));
+  refs.btnManage.addEventListener('click', () => openManageModal('formats'));
   refs.btnWelcomeFmt.addEventListener('click', () => openManageModal('formats'));
-  refs.btnTags.addEventListener('click', () => openManageModal('tags'));
   refs.mgmtNavFormats.addEventListener('click', () => switchMgmtSection('formats'));
   refs.mgmtNavTags.addEventListener('click', () => switchMgmtSection('tags'));
   refs.mgmtClose.addEventListener('click', () => { refs.manageModal.hidden = true; });

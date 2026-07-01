@@ -96,6 +96,7 @@ const state = {
   query: '', tagFilter: null,
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
+  sortDir: 'desc',
 };
 
 /* ============================================================
@@ -105,7 +106,7 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
@@ -174,6 +175,7 @@ async function loadPrefs() {
     if (typeof map.sidebarOpen === 'boolean') state.sidebarOpen = map.sidebarOpen;
     if (typeof map.groupByDate === 'boolean') state.groupByDate = map.groupByDate;
     if (map.groupDateField === 'createdAt' || map.groupDateField === 'updatedAt') state.groupDateField = map.groupDateField;
+    if (map.sortDir === 'asc' || map.sortDir === 'desc') state.sortDir = map.sortDir;
     return map;
   } catch { return {}; }
 }
@@ -218,8 +220,13 @@ function updateTagSuggest() {
 async function refreshMemos() {
   state.memos = await Store.getAll('memos');
 }
+function sortField() {
+  return state.groupByDate ? state.groupDateField : 'updatedAt';
+}
 function filteredMemos() {
   const q = state.query.trim().toLowerCase();
+  const field = sortField();
+  const dir = state.sortDir === 'asc' ? 1 : -1;
   return state.memos
     .filter(m => {
       if (state.tagFilter && !(m.tags || []).includes(state.tagFilter)) return false;
@@ -228,7 +235,7 @@ function filteredMemos() {
       const inTags  = (m.tags || []).some(t => t.toLowerCase().includes(q));
       return inTitle || inTags;
     })
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    .sort((a, b) => (a[field] - b[field]) * dir);
 }
 function renderMemoItem(m) {
   const active  = m.id === state.currentId ? ' active' : '';
@@ -267,8 +274,7 @@ function renderList() {
     const field = state.groupDateField;
     const keys = [];
     const groupMap = new Map();
-    const grouped = [...list].sort((a, b) => b[field] - a[field]);
-    for (const m of grouped) {
+    for (const m of list) {
       const key = fmtDate(m[field]);
       if (!groupMap.has(key)) { groupMap.set(key, []); keys.push(key); }
       groupMap.get(key).push(m);
@@ -1165,6 +1171,15 @@ function applyGroupByDateState() {
   refs.groupFieldSelect.hidden = !state.groupByDate;
   refs.groupFieldSelect.value = state.groupDateField;
 }
+function applySortDirState() {
+  const asc = state.sortDir === 'asc';
+  refs.btnSortOrder.innerHTML = asc
+    ? '<i class="fa-solid fa-arrow-up-wide-short"></i> 昇順'
+    : '<i class="fa-solid fa-arrow-down-wide-short"></i> 降順';
+  refs.btnSortOrder.title = asc
+    ? '古い順に表示中（クリックで新しい順に切替）'
+    : '新しい順に表示中（クリックで古い順に切替）';
+}
 function toggleSidebar() {
   state.sidebarOpen = !state.sidebarOpen;
   applySidebarState();
@@ -1696,6 +1711,12 @@ function bindEvents() {
     savePref('groupDateField', state.groupDateField);
     renderList();
   });
+  refs.btnSortOrder.addEventListener('click', () => {
+    state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    applySortDirState();
+    savePref('sortDir', state.sortDir);
+    renderList();
+  });
 
   /* --- フォーマット管理モーダル --- */
   refs.fmClose.addEventListener('click', () => { refs.formatModal.hidden = true; });
@@ -1768,6 +1789,7 @@ async function init() {
   applyPanelState();
   applySidebarState();
   applyGroupByDateState();
+  applySortDirState();
 
   await refreshMemos();
   await refreshFormats();

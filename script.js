@@ -419,9 +419,14 @@ function renderList() {
       if (!groupMap.has(key)) { groupMap.set(key, []); keys.push(key); }
       groupMap.get(key).push(m);
     }
+    /* 検索・タグ絞り込み中は、折りたたみ状態に関わらず該当グループを
+       強制的に開く（「今日」等の未展開グループに隠れて検索結果が
+       見えなくなるのを防ぐ）。設定自体は変更しないため、絞り込みを
+       解除すれば元の開閉状態に戻る。 */
+    const filtering = !!(state.query.trim() || state.tagFilter);
     html = keys.map(key => {
       const memos     = groupMap.get(key);
-      const collapsed = !state.expandedGroups.has(key);
+      const collapsed = !filtering && !state.expandedGroups.has(key);
       const chevron   = collapsed ? 'fa-chevron-right' : 'fa-chevron-down';
       const items     = collapsed ? '' : memos.map(m => renderMemoItem(m)).join('');
       const imgTotal  = memos.reduce((sum, m) => sum + (m.imageCount || 0), 0);

@@ -41,6 +41,11 @@
       <input id="searchInput" type="text" placeholder="タイトル・タグ・本文で検索" autocomplete="off">
       <button id="searchClear" class="icon-btn" title="検索をクリア" hidden=""><i class="fa-solid fa-xmark"></i></button>
     </div>
+    <div class="search-scope" id="searchScope">
+      <button class="scope-chip active" data-scope="title" title="タイトルを検索対象に含める（クリックで切替）">タイトル</button>
+      <button class="scope-chip active" data-scope="tags" title="タグを検索対象に含める（クリックで切替）">タグ</button>
+      <button class="scope-chip active" data-scope="body" title="本文を検索対象に含める（クリックで切替）">本文</button>
+    </div>
     <div class="tagbar" id="tagBar"></div>
     <div class="list-meta">
       <span id="listCount" class="mono">0 件</span>

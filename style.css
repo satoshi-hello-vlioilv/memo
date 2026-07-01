@@ -203,6 +203,17 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .search-box .icon-btn{color:var(--inv-sub)}
 .search-box .icon-btn:hover{background:var(--ink-800);color:var(--inv-text)}
 
+.search-scope{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
+.scope-chip{
+  height:22px;padding:0 10px;border-radius:11px;
+  font-size:10.5px;font-weight:600;
+  background:var(--ink-850);color:var(--inv-sub);
+  border:1px solid var(--ink-700);
+  transition:background-color .12s,color .12s,border-color .12s;
+}
+.scope-chip:hover{color:var(--inv-text);border-color:var(--primary)}
+.scope-chip.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+
 .tagbar{
   display:flex;flex-wrap:wrap;gap:6px;
   padding:0 14px 10px;

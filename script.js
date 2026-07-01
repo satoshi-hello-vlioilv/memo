@@ -96,6 +96,7 @@ const state = {
   currentId: null,
   dirty: false, savedAt: null,
   query: '', tagFilter: null,
+  searchScope: { title: true, tags: true, body: true },
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc',
@@ -108,7 +109,7 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','searchScope','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
@@ -179,6 +180,13 @@ async function loadPrefs() {
     if (typeof map.groupByDate === 'boolean') state.groupByDate = map.groupByDate;
     if (map.groupDateField === 'createdAt' || map.groupDateField === 'updatedAt') state.groupDateField = map.groupDateField;
     if (map.sortDir === 'asc' || map.sortDir === 'desc') state.sortDir = map.sortDir;
+    if (map.searchScope && typeof map.searchScope === 'object') {
+      const s = map.searchScope;
+      if (typeof s.title === 'boolean' && typeof s.tags === 'boolean' && typeof s.body === 'boolean'
+          && (s.title || s.tags || s.body)) {
+        state.searchScope = { title: s.title, tags: s.tags, body: s.body };
+      }
+    }
     return map;
   } catch { return {}; }
 }
@@ -238,23 +246,24 @@ function filteredMemos() {
   const q = state.query.trim().toLowerCase();
   const field = sortField();
   const dir = state.sortDir === 'asc' ? 1 : -1;
+  const scope = state.searchScope;
   return state.memos
     .filter(m => {
       if (state.tagFilter && !(m.tags || []).includes(state.tagFilter)) return false;
       if (!q) return true;
-      const inTitle = (m.title || '').toLowerCase().includes(q);
-      const inTags  = (m.tags || []).some(t => t.toLowerCase().includes(q));
-      const inBody  = stripImgMarkers(m.body).toLowerCase().includes(q);
+      const inTitle = scope.title && (m.title || '').toLowerCase().includes(q);
+      const inTags  = scope.tags  && (m.tags || []).some(t => t.toLowerCase().includes(q));
+      const inBody  = scope.body  && stripImgMarkers(m.body).toLowerCase().includes(q);
       return inTitle || inTags || inBody;
     })
     .sort((a, b) => (a[field] - b[field]) * dir);
 }
-/* 検索語がヒットした本文位置を中心に、前後を切り出してハイライトする */
-function makeSnippet(body, query) {
+/* 検索語がヒットした本文位置を中心に、前後を切り出してハイライトする（本文が検索対象外なら通常表示） */
+function makeSnippet(body, query, searchBody) {
   const text = stripImgMarkers(body);
   if (!text) return '';
   const q = query.trim();
-  if (!q) return esc(text.slice(0, 64));
+  if (!q || !searchBody) return esc(text.slice(0, 64));
   const idx = text.toLowerCase().indexOf(q.toLowerCase());
   if (idx === -1) return esc(text.slice(0, 64));
   const CONTEXT = 26;
@@ -270,7 +279,7 @@ function renderMemoItem(m) {
   const title   = esc(m.title) || '無題のメモ';
   const dts     = state.groupByDate ? (m[state.groupDateField] ?? m.updatedAt) : m.updatedAt;
   const date    = isToday(dts) ? fmtTime(dts) : fmtDate(dts);
-  const snippet = makeSnippet(m.body, state.query);
+  const snippet = makeSnippet(m.body, state.query, state.searchScope.body);
   const tags    = (m.tags || []).slice(0, 3).map(t =>
     `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
   const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';
@@ -326,7 +335,7 @@ function renderList() {
   const empty = list.length === 0;
   refs.listEmpty.hidden = !empty;
   refs.listEmptyMsg.innerHTML = (state.query || state.tagFilter)
-    ? '条件に一致するメモがありません。<br>検索語やタグを見直してください。'
+    ? '条件に一致するメモがありません。<br>検索語・検索範囲・タグを見直してください。'
     : 'メモはまだありません。<br>「新規メモ」から作成できます。';
   renderTagBar();
 }
@@ -1240,6 +1249,11 @@ function applySortDirState() {
     ? '古い順に表示中（クリックで新しい順に切替）'
     : '新しい順に表示中（クリックで古い順に切替）';
 }
+function applySearchScopeState() {
+  $$('.scope-chip', refs.searchScope).forEach(btn => {
+    btn.classList.toggle('active', !!state.searchScope[btn.dataset.scope]);
+  });
+}
 function toggleSidebar() {
   state.sidebarOpen = !state.sidebarOpen;
   applySidebarState();
@@ -1522,6 +1536,20 @@ function bindEvents() {
     refs.searchClear.hidden = true;
     renderList();
     refs.searchInput.focus();
+  });
+  refs.searchScope.addEventListener('click', e => {
+    const btn = e.target.closest('.scope-chip');
+    if (!btn) return;
+    const key = btn.dataset.scope;
+    const next = { ...state.searchScope, [key]: !state.searchScope[key] };
+    if (!next.title && !next.tags && !next.body) {
+      toast('検索対象は1つ以上選択してください', 'info');
+      return;
+    }
+    state.searchScope = next;
+    applySearchScopeState();
+    savePref('searchScope', state.searchScope);
+    renderList();
   });
   refs.tagBar.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
@@ -1847,6 +1875,7 @@ async function init() {
   applySidebarState();
   applyGroupByDateState();
   applySortDirState();
+  applySearchScopeState();
 
   await refreshMemos();
   await refreshFormats();

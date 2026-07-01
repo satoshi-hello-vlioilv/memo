@@ -474,11 +474,13 @@ function createInlineImg(imgId, align, size) {
   wrap.dataset.align = align || 'c';
   wrap.dataset.size = size || 'm';
   wrap.setAttribute('draggable', 'true');
-  wrap.title = 'ドラッグで本文内の位置を移動';
+  wrap.title = 'ダブルクリックで拡大／ドラッグで移動';
   if (img) {
     wrap.innerHTML =
       `<img src="${urlOf(img)}" class="body-img__img" alt="${esc(img.name)}" draggable="false">` +
       `<span class="body-img__ctrl">` +
+        `<button class="body-img__zoom" title="拡大表示"><i class="fa-solid fa-magnifying-glass-plus"></i></button>` +
+        `<span class="body-img__div"></span>` +
         `<button class="body-img__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
         `<button class="body-img__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
         `<button class="body-img__pos${align==='r'?' on':''}" data-a="r" title="右寄せ"><i class="fa-solid fa-align-right"></i></button>` +
@@ -679,6 +681,14 @@ function insertImageRef(imgId) {
   ensureTrailingEditable();
   placeCaretAfter(imgEl);
   markDirty(); renderCharCount();
+}
+
+/* 本文内画像をライトボックスで拡大表示（パネルと同じビューワを共用） */
+function openInlineImage(wrap) {
+  const id = Number(wrap.dataset.id);
+  const index = state.images.findIndex(x => x.id === id);
+  if (index >= 0) lbShow(index);
+  else toast('この画像は登録されていません', 'error');
 }
 
 /* ============================================================
@@ -1495,7 +1505,19 @@ function bindEvents() {
   refs.bodyInput.addEventListener('mousedown', e => {
     if (e.target.closest('.body-img__ctrl')) e.preventDefault();
   });
+  refs.bodyInput.addEventListener('dblclick', e => {
+    const wrap = e.target.closest('.body-img');
+    if (!wrap || e.target.closest('.body-img__ctrl')) return;
+    e.preventDefault();
+    openInlineImage(wrap);
+  });
   refs.bodyInput.addEventListener('click', e => {
+    const zoomBtn = e.target.closest('.body-img__zoom');
+    if (zoomBtn) {
+      const wrap = zoomBtn.closest('.body-img');
+      if (wrap) openInlineImage(wrap);
+      return;
+    }
     const posBtn = e.target.closest('.body-img__pos');
     if (posBtn) {
       const wrap = posBtn.closest('.body-img');

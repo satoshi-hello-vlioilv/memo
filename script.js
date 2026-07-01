@@ -109,7 +109,7 @@ function collectRefs() {
     'searchInput','searchClear','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
-    'btnTags','tagModal','tmClose','tmInput','tmAdd','tmList',
+    'btnTags','tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime',
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
@@ -118,7 +118,8 @@ function collectRefs() {
     'thumbSize','thumbGrid','imgEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
     'lbClose','lbStage','lbImg','lbPrev','lbNext',
-    'formatModal','fmClose','fmNew','fmList','fmEmpty','fmName','fmContent','fmDelete','fmSave',
+    'manageModal','mgmtClose','mgmtNavFormats','mgmtNavTags','mgmtFormatCount','mgmtTagCount','mgmtSectionFormats','mgmtSectionTags',
+    'fmNew','fmList','fmEmpty','fmName','fmContent','fmDelete','fmSave',
     'dialogRoot','dlgTitle','dlgMsg','dlgFoot','toastWrap','fatal','fatalMsg',
   ];
   for (const id of ids) refs[id] = document.getElementById(id);
@@ -193,12 +194,18 @@ async function refreshTagsMaster() {
   renderTagMasterList();
 }
 function renderTagMasterList() {
+  const counts = new Map();
+  for (const m of state.memos) for (const t of (m.tags || [])) counts.set(t, (counts.get(t) || 0) + 1);
+  refs.tmEmpty.hidden = state.tagsMaster.length > 0;
   refs.tmList.innerHTML = state.tagsMaster.map(t => `
-    <li class="tm-list-item">
-      <span>${esc(t)}</span>
+    <li class="tag-mgmt-item">
+      <span class="chip ${tagClass(t)}">${esc(t)}</span>
+      <span class="tmi-spacer"></span>
+      <span class="tmi-count mono">${counts.get(t) || 0} 件</span>
       <button class="icon-btn btn-danger-ghost tm-del" data-tag="${esc(t)}" title="削除"><i class="fa-solid fa-trash-can"></i></button>
     </li>
   `).join('');
+  refs.mgmtTagCount.textContent = state.tagsMaster.length;
 }
 function getTagSearchWord() {
   const parts = refs.tagsInput.value.split(/[,、]\s*/);
@@ -1067,6 +1074,7 @@ function renderFormatList() {
   refs.fmList.innerHTML = state.formats.map(f =>
     `<li class="fm-item ${f.id === fm.editingId ? 'active' : ''}" data-id="${f.id}">
        <i class="fa-solid fa-file-lines"></i><span>${esc(f.name)}</span></li>`).join('');
+  refs.mgmtFormatCount.textContent = state.formats.length;
 }
 function fmLoad(id) {
   const f = state.formats.find(x => x.id === id);
@@ -1110,10 +1118,22 @@ async function fmDelete() {
   fmLoad(null);
   toast('フォーマットを削除しました', 'success');
 }
-function openFormatModal() {
-  refs.formatModal.hidden = false;
-  fmLoad(state.formats[0]?.id ?? null);
-  refs.fmName.focus();
+function switchMgmtSection(section) {
+  const isFormats = section === 'formats';
+  refs.mgmtNavFormats.classList.toggle('active', isFormats);
+  refs.mgmtNavTags.classList.toggle('active', !isFormats);
+  refs.mgmtSectionFormats.hidden = !isFormats;
+  refs.mgmtSectionTags.hidden = isFormats;
+}
+function openManageModal(section) {
+  refs.manageModal.hidden = false;
+  switchMgmtSection(section);
+  if (section === 'formats') {
+    fmLoad(state.formats[0]?.id ?? null);
+    refs.fmName.focus();
+  } else {
+    refs.tmInput.focus();
+  }
 }
 function applyFormat() {
   const id = Number(refs.formatSelect.value);
@@ -1488,16 +1508,18 @@ function bindEvents() {
     if (await guardDirty()) openMemo(id);
   });
 
-  /* --- 新規・フォーマット管理 --- */
+  /* --- 新規・管理画面（フォーマット／タグ） --- */
   refs.btnNew.addEventListener('click', async () => { if (await guardDirty()) newMemo(); });
   refs.btnWelcomeNew.addEventListener('click', () => newMemo());
-  refs.btnFormats.addEventListener('click', openFormatModal);
-  refs.btnWelcomeFmt.addEventListener('click', openFormatModal);
+  refs.btnFormats.addEventListener('click', () => openManageModal('formats'));
+  refs.btnWelcomeFmt.addEventListener('click', () => openManageModal('formats'));
+  refs.btnTags.addEventListener('click', () => openManageModal('tags'));
+  refs.mgmtNavFormats.addEventListener('click', () => switchMgmtSection('formats'));
+  refs.mgmtNavTags.addEventListener('click', () => switchMgmtSection('tags'));
+  refs.mgmtClose.addEventListener('click', () => { refs.manageModal.hidden = true; });
+  refs.manageModal.addEventListener('click', e => { if (e.target === refs.manageModal) refs.manageModal.hidden = true; });
 
-  /* --- タグマスタ管理モーダル --- */
-  refs.btnTags.addEventListener('click', () => { refs.tagModal.hidden = false; refs.tmInput.focus(); });
-  refs.tmClose.addEventListener('click', () => { refs.tagModal.hidden = true; });
-  refs.tagModal.addEventListener('click', e => { if (e.target === refs.tagModal) refs.tagModal.hidden = true; });
+  /* --- タグ管理 --- */
   refs.tmAdd.addEventListener('click', async () => {
     const name = refs.tmInput.value.trim();
     if (!name) return;
@@ -1718,11 +1740,7 @@ function bindEvents() {
     renderList();
   });
 
-  /* --- フォーマット管理モーダル --- */
-  refs.fmClose.addEventListener('click', () => { refs.formatModal.hidden = true; });
-  refs.formatModal.addEventListener('click', e => {
-    if (e.target === refs.formatModal) refs.formatModal.hidden = true;
-  });
+  /* --- フォーマット管理 --- */
   refs.fmNew.addEventListener('click', () => { fmLoad(null); refs.fmName.focus(); });
   refs.fmList.addEventListener('click', e => {
     const item = e.target.closest('.fm-item');
@@ -1746,7 +1764,7 @@ function bindEvents() {
       if (!refs.ctxMenu.hidden) { hideCtxMenu(); return; }
       if (!refs.dialogRoot.hidden) { closeDialog('cancel'); return; }
       if (lb.open) { lbClose(); return; }
-      if (!refs.formatModal.hidden) { refs.formatModal.hidden = true; return; }
+      if (!refs.manageModal.hidden) { refs.manageModal.hidden = true; return; }
       return;
     }
     if (lb.open) {

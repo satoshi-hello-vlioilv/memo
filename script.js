@@ -462,7 +462,6 @@ function urlOf(img) {
 /* ============================================================
    インライン画像（contenteditable 内）
    ============================================================ */
-const IMG_MARKER_RE = /\[img:(\d+)(?::([lcr]))?(?::([sml]))?\]/g;
 let draggedImg = null;   /* 本文内でドラッグ移動中の画像要素 */
 
 function createInlineImg(imgId, align, size) {
@@ -472,22 +471,28 @@ function createInlineImg(imgId, align, size) {
   wrap.contentEditable = 'false';
   wrap.dataset.id = imgId;
   wrap.dataset.align = align || 'c';
-  wrap.dataset.size = size || 'm';
+  const sizeVal = size || 'm';
+  wrap.dataset.size = sizeVal;
   wrap.setAttribute('draggable', 'true');
-  wrap.title = 'ダブルクリックで拡大／ドラッグで移動';
+  wrap.title = 'ダブルクリックで拡大／ドラッグで移動／端をドラッグでサイズ変更';
   if (img) {
+    const isPreset = sizeVal === 's' || sizeVal === 'm' || sizeVal === 'l';
+    const customPx = isPreset ? null : parseInt(sizeVal, 10);
+    const widthStyle = Number.isFinite(customPx) ? ` style="width:${customPx}px"` : '';
     wrap.innerHTML =
-      `<img src="${urlOf(img)}" class="body-img__img" alt="${esc(img.name)}" draggable="false">` +
+      `<img src="${urlOf(img)}" class="body-img__img" alt="${esc(img.name)}" draggable="false"${widthStyle}>` +
+      `<span class="body-img__resize" title="ドラッグでサイズ変更"></span>` +
       `<span class="body-img__ctrl">` +
         `<button class="body-img__zoom" title="拡大表示"><i class="fa-solid fa-magnifying-glass-plus"></i></button>` +
         `<span class="body-img__div"></span>` +
         `<button class="body-img__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
         `<button class="body-img__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
         `<button class="body-img__pos${align==='r'?' on':''}" data-a="r" title="右寄せ"><i class="fa-solid fa-align-right"></i></button>` +
-        `<select class="body-img__size" title="サイズ">` +
-          `<option value="s"${size==='s'?' selected':''}>小</option>` +
-          `<option value="m"${size==='m'?' selected':''}>中</option>` +
-          `<option value="l"${size==='l'?' selected':''}>大</option>` +
+        `<select class="body-img__size" title="表示サイズ（プリセット）">` +
+          `<option value="s"${sizeVal==='s'?' selected':''}>小</option>` +
+          `<option value="m"${sizeVal==='m'?' selected':''}>中</option>` +
+          `<option value="l"${sizeVal==='l'?' selected':''}>大</option>` +
+          `<option value="custom" hidden${!isPreset?' selected':''}>カスタム</option>` +
         `</select>` +
         `<button class="body-img__del" title="削除"><i class="fa-solid fa-xmark"></i></button>` +
       `</span>`;
@@ -507,7 +512,7 @@ function addTextWithBreaks(parent, text) {
 
 function textToFragment(text) {
   const frag = document.createDocumentFragment();
-  const re = /\[img:(\d+)(?::([lcr]))?(?::([sml]))?\]/g;
+  const re = /\[img:(\d+)(?::([lcr]))?(?::([sml]|\d+))?\]/g;
   let last = 0, m;
   re.lastIndex = 0;
   while ((m = re.exec(text)) !== null) {
@@ -689,6 +694,32 @@ function openInlineImage(wrap) {
   const index = state.images.findIndex(x => x.id === id);
   if (index >= 0) lbShow(index);
   else toast('この画像は登録されていません', 'error');
+}
+
+/* 本文内画像の右下角ドラッグによる自由なサイズ変更 */
+function startImageResize(wrap, startEvent) {
+  const imgEl = wrap.querySelector('.body-img__img');
+  if (!imgEl) return;
+  const startX = startEvent.clientX;
+  const startWidth = imgEl.getBoundingClientRect().width;
+  const minW = 48;
+  const maxW = Math.max(minW, refs.bodyInput.getBoundingClientRect().width - 8);
+  wrap.classList.add('resizing');
+  const onMove = e => {
+    const w = Math.round(Math.min(maxW, Math.max(minW, startWidth + (e.clientX - startX))));
+    imgEl.style.width = w + 'px';
+  };
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    wrap.classList.remove('resizing');
+    wrap.dataset.size = String(Math.round(imgEl.getBoundingClientRect().width));
+    const sel = wrap.querySelector('.body-img__size');
+    if (sel) sel.value = 'custom';
+    markDirty(); renderCharCount();
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
 }
 
 /* ============================================================
@@ -1501,13 +1532,20 @@ function bindEvents() {
       insertBodyText('\t');
     }
   });
-  /* 画像コントロールのクリックでキャレットが動かないよう防止 */
+  /* 画像コントロールのクリックでキャレットが動かないよう防止／サイズ変更の開始 */
   refs.bodyInput.addEventListener('mousedown', e => {
+    const resizeHandle = e.target.closest('.body-img__resize');
+    if (resizeHandle) {
+      e.preventDefault();
+      const wrap = resizeHandle.closest('.body-img');
+      if (wrap) startImageResize(wrap, e);
+      return;
+    }
     if (e.target.closest('.body-img__ctrl')) e.preventDefault();
   });
   refs.bodyInput.addEventListener('dblclick', e => {
     const wrap = e.target.closest('.body-img');
-    if (!wrap || e.target.closest('.body-img__ctrl')) return;
+    if (!wrap || e.target.closest('.body-img__ctrl') || e.target.closest('.body-img__resize')) return;
     e.preventDefault();
     openInlineImage(wrap);
   });
@@ -1537,14 +1575,19 @@ function bindEvents() {
     const sel = e.target.closest('.body-img__size');
     if (sel) {
       const wrap = sel.closest('.body-img');
-      if (wrap) { wrap.dataset.size = sel.value; markDirty(); }
+      if (wrap) {
+        wrap.dataset.size = sel.value;
+        const imgEl = wrap.querySelector('.body-img__img');
+        if (imgEl) imgEl.style.width = '';   /* プリセット選択時はカスタム幅を解除 */
+        markDirty(); renderCharCount();
+      }
     }
   });
   /* --- 本文内画像のドラッグ移動（挿入位置をゴーストで可視化） --- */
   refs.bodyInput.addEventListener('dragstart', e => {
     const wrap = e.target.closest('.body-img');
     if (!wrap) return;                                  /* 画像以外は通常動作 */
-    if (e.target.closest('.body-img__ctrl')) { e.preventDefault(); return; }
+    if (e.target.closest('.body-img__ctrl') || e.target.closest('.body-img__resize')) { e.preventDefault(); return; }
     draggedImg = wrap;
     e.dataTransfer.effectAllowed = 'move';
     /* ファイルとして扱われないよう内部用データのみ設定 */

@@ -274,6 +274,11 @@ button:disabled{cursor:not-allowed;opacity:.45}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .memo-item.active .mi-snippet{color:var(--text-sub)}
+.mi-snippet mark{
+  background:rgba(19,121,108,.4);color:var(--inv-text);
+  border-radius:2px;padding:0 1px;
+}
+.memo-item.active .mi-snippet mark{background:rgba(19,121,108,.18);color:var(--primary-deep)}
 .mi-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;min-height:18px}
 .mi-tags{display:flex;gap:4px;overflow:hidden;flex-wrap:nowrap}
 .mi-imgs{

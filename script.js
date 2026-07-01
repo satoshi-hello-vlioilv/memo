@@ -232,6 +232,8 @@ async function refreshMemos() {
 function sortField() {
   return state.groupByDate ? state.groupDateField : 'updatedAt';
 }
+const BODY_IMG_MARKER_RE = /\[img:\d+(?::[lcr])?(?::(?:[sml]|\d+))?\]/g;
+const stripImgMarkers = text => String(text ?? '').replace(BODY_IMG_MARKER_RE, ' ').replace(/\s+/g, ' ').trim();
 function filteredMemos() {
   const q = state.query.trim().toLowerCase();
   const field = sortField();
@@ -242,16 +244,33 @@ function filteredMemos() {
       if (!q) return true;
       const inTitle = (m.title || '').toLowerCase().includes(q);
       const inTags  = (m.tags || []).some(t => t.toLowerCase().includes(q));
-      return inTitle || inTags;
+      const inBody  = stripImgMarkers(m.body).toLowerCase().includes(q);
+      return inTitle || inTags || inBody;
     })
     .sort((a, b) => (a[field] - b[field]) * dir);
+}
+/* 検索語がヒットした本文位置を中心に、前後を切り出してハイライトする */
+function makeSnippet(body, query) {
+  const text = stripImgMarkers(body);
+  if (!text) return '';
+  const q = query.trim();
+  if (!q) return esc(text.slice(0, 64));
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return esc(text.slice(0, 64));
+  const CONTEXT = 26;
+  const start = Math.max(0, idx - CONTEXT);
+  const end   = Math.min(text.length, idx + q.length + CONTEXT);
+  const before = esc(text.slice(start, idx));
+  const match  = esc(text.slice(idx, idx + q.length));
+  const after  = esc(text.slice(idx + q.length, end));
+  return (start > 0 ? '…' : '') + before + `<mark>${match}</mark>` + after + (end < text.length ? '…' : '');
 }
 function renderMemoItem(m) {
   const active  = m.id === state.currentId ? ' active' : '';
   const title   = esc(m.title) || '無題のメモ';
   const dts     = state.groupByDate ? (m[state.groupDateField] ?? m.updatedAt) : m.updatedAt;
   const date    = isToday(dts) ? fmtTime(dts) : fmtDate(dts);
-  const snippet = esc((m.body || '').replace(/\s+/g, ' ').slice(0, 64));
+  const snippet = makeSnippet(m.body, state.query);
   const tags    = (m.tags || []).slice(0, 3).map(t =>
     `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
   const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';

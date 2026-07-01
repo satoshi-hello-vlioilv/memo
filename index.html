@@ -191,70 +191,86 @@
   <span class="lb-hint">ホイールでズーム ／ ドラッグで移動 ／ ← → で切替</span>
 </div>
 
-<!-- ======== フォーマット管理モーダル ======== -->
-<div class="modal-backdrop" id="formatModal" hidden="">
-  <div class="modal-card">
+<!-- ======== 管理画面（フォーマット／タグを1つに統合） ======== -->
+<div class="modal-backdrop" id="manageModal" hidden="">
+  <div class="modal-card mgmt-card">
     <div class="modal-head">
-      <h3><i class="fa-solid fa-clipboard-list"></i> フォーマット管理</h3>
-      <button id="fmClose" class="icon-btn" title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      <h3><i class="fa-solid fa-sliders"></i> 管理</h3>
+      <button id="mgmtClose" class="icon-btn" title="閉じる"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <div class="fm-body">
-      <div class="fm-list-col">
-        <div class="fm-list-head">
-          <span>登録済み</span>
-          <button id="fmNew" class="btn btn-soft" style="height:28px;padding:0 11px;font-size:12px"><i class="fa-solid fa-plus"></i> 新規</button>
-        </div>
-        <ul class="fm-list" id="fmList"></ul>
-        <div class="fm-empty" id="fmEmpty" hidden="">フォーマットはまだありません。<br>「新規」から登録してください。</div>
-      </div>
-      <div class="fm-edit-col">
-        <div class="fm-field">
-          <label for="fmName">フォーマット名</label>
-          <input id="fmName" type="text" placeholder="例）日報 ／ 品質トラブル記録 ／ 会議メモ" autocomplete="off">
-        </div>
-        <div class="fm-field">
-          <label for="fmTags">自動付与タグ（適用時にメモへ追加・カンマ区切り）</label>
-          <input id="fmTags" type="text" placeholder="例）日報, 業務記録" autocomplete="off">
-        </div>
-        <div class="fm-field grow">
-          <label for="fmContent">内容（適用時に本文へ挿入されます）</label>
-          <textarea id="fmContent" placeholder="■ 日時：{{datetime}}
+    <div class="mgmt-body">
+      <nav class="mgmt-nav">
+        <button id="mgmtNavFormats" class="mgmt-nav-item" data-section="formats">
+          <i class="fa-solid fa-clipboard-list"></i>
+          <span class="mgmt-nav-label">フォーマット</span>
+          <span class="mgmt-nav-count mono" id="mgmtFormatCount">0</span>
+        </button>
+        <button id="mgmtNavTags" class="mgmt-nav-item" data-section="tags">
+          <i class="fa-solid fa-tags"></i>
+          <span class="mgmt-nav-label">タグ</span>
+          <span class="mgmt-nav-count mono" id="mgmtTagCount">0</span>
+        </button>
+      </nav>
+
+      <!-- フォーマット セクション -->
+      <div class="mgmt-section" id="mgmtSectionFormats">
+        <div class="fm-body">
+          <div class="fm-list-col">
+            <div class="fm-list-head">
+              <span>登録済みフォーマット</span>
+              <button id="fmNew" class="btn btn-soft" style="height:28px;padding:0 11px;font-size:12px"><i class="fa-solid fa-plus"></i> 新規</button>
+            </div>
+            <ul class="fm-list" id="fmList"></ul>
+            <div class="fm-empty" id="fmEmpty" hidden="">フォーマットはまだありません。<br>「新規」から登録してください。</div>
+          </div>
+          <div class="fm-edit-col">
+            <div class="fm-field">
+              <label for="fmName">フォーマット名</label>
+              <input id="fmName" type="text" placeholder="例）日報 ／ 品質トラブル記録 ／ 会議メモ" autocomplete="off">
+            </div>
+            <div class="fm-field">
+              <label for="fmTags">自動付与タグ（適用時にメモへ追加・カンマ区切り）</label>
+              <input id="fmTags" type="text" placeholder="例）日報, 業務記録" autocomplete="off">
+            </div>
+            <div class="fm-field grow">
+              <label for="fmContent">内容（適用時に本文へ挿入されます）</label>
+              <textarea id="fmContent" placeholder="■ 日時：{{datetime}}
 ■ 場所：
 ■ 内容：{{cursor}}
 ■ 対応：" spellcheck="false"></textarea>
-          <div class="token-row">
-            <span class="lbl">挿入トークン：</span>
-            <button class="token" data-token="{{date}}">{{date}}</button>
-            <button class="token" data-token="{{time}}">{{time}}</button>
-            <button class="token" data-token="{{datetime}}">{{datetime}}</button>
-            <button class="token" data-token="{{cursor}}">{{cursor}}</button>
+              <div class="token-row">
+                <span class="lbl">挿入トークン：</span>
+                <button class="token" data-token="{{date}}">{{date}}</button>
+                <button class="token" data-token="{{time}}">{{time}}</button>
+                <button class="token" data-token="{{datetime}}">{{datetime}}</button>
+                <button class="token" data-token="{{cursor}}">{{cursor}}</button>
+              </div>
+              <div class="token-hint">
+                {{date}} {{time}} {{datetime}} は適用時の日付・時刻に置換されます。{{cursor}} の位置にカーソルが移動します。
+              </div>
+            </div>
           </div>
-          <div class="token-hint">
-            {{date}} {{time}} {{datetime}} は適用時の日付・時刻に置換されます。{{cursor}} の位置にカーソルが移動します。
+        </div>
+        <div class="fm-foot">
+          <button id="fmDelete" class="btn btn-danger-ghost" disabled=""><i class="fa-regular fa-trash-can"></i> 削除</button>
+          <button id="fmSave" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> フォーマットを保存</button>
+        </div>
+      </div>
+
+      <!-- タグ セクション -->
+      <div class="mgmt-section" id="mgmtSectionTags" hidden="">
+        <div class="tag-mgmt-body">
+          <div class="tag-add-row">
+            <input id="tmInput" type="text" placeholder="新しいタグを入力してEnter" autocomplete="off">
+            <button id="tmAdd" class="btn btn-primary"><i class="fa-solid fa-plus"></i> 登録</button>
+          </div>
+          <ul class="tag-mgmt-list" id="tmList"></ul>
+          <div class="tag-mgmt-empty" id="tmEmpty" hidden="">
+            <i class="fa-solid fa-tags"></i>
+            <span>登録済みのタグはまだありません。<br>上の欄から追加してください。</span>
           </div>
         </div>
       </div>
-    </div>
-    <div class="fm-foot">
-      <button id="fmDelete" class="btn btn-danger-ghost" disabled=""><i class="fa-regular fa-trash-can"></i> 削除</button>
-      <button id="fmSave" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> フォーマットを保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- ======== タグマスタ管理モーダル ======== -->
-<div class="modal-backdrop" id="tagModal" hidden="">
-  <div class="modal-card" style="width: 440px;">
-    <div class="modal-head">
-      <h3><i class="fa-solid fa-tags"></i> タグマスタ管理</h3>
-      <button id="tmClose" class="icon-btn" title="閉じる"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-    <div class="dlg-body" style="display: flex; flex-direction: column; gap: 14px; max-height: 60vh;">
-      <div style="display: flex; gap: 8px;">
-        <input id="tmInput" type="text" placeholder="新しいタグを入力" style="flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-s); font-size: 13.5px; outline: none;">
-        <button id="tmAdd" class="btn btn-primary">登録</button>
-      </div>
-      <ul id="tmList" style="list-style: none; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding-right: 4px;"></ul>
     </div>
   </div>
 </div>

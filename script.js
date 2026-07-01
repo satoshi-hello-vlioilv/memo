@@ -292,9 +292,13 @@ function renderList() {
       const collapsed = !state.expandedGroups.has(key);
       const chevron   = collapsed ? 'fa-chevron-right' : 'fa-chevron-down';
       const items     = collapsed ? '' : memos.map(m => renderMemoItem(m)).join('');
+      const imgTotal  = memos.reduce((sum, m) => sum + (m.imageCount || 0), 0);
+      const imgBadge  = imgTotal > 0
+        ? `<span class="date-group-imgs"><i class="fa-regular fa-image"></i>${imgTotal}</span>` : '';
       return `<li class="date-group-header${collapsed ? ' collapsed' : ''}" data-date="${esc(key)}">` +
         `<i class="fa-solid ${chevron}"></i>` +
         `<span class="date-group-label">${getDateGroupLabel(key)}</span>` +
+        imgBadge +
         `<span class="date-group-count">${memos.length}</span></li>${items}`;
     }).join('');
   }

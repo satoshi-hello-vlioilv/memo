@@ -36,10 +36,11 @@
       <span class="sidebar-title"><i class="fa-solid fa-clock-rotate-left"></i> メモ一覧</span>
       <button id="btnSidebarClose" class="icon-btn" title="サイドバーを閉じる"><i class="fa-solid fa-angles-left"></i></button>
     </div>
-    <div class="search-box">
+    <div class="search-box" style="position:relative;">
       <i class="fa-solid fa-magnifying-glass"></i>
       <input id="searchInput" type="text" placeholder="タイトル・タグ・本文で検索" autocomplete="off">
       <button id="searchClear" class="icon-btn" title="検索をクリア" hidden=""><i class="fa-solid fa-xmark"></i></button>
+      <div class="search-suggest" id="searchSuggest" hidden=""></div>
     </div>
     <div class="search-scope" id="searchScope">
       <button class="scope-chip active" data-scope="title" title="タイトルを検索対象に含める（クリックで切替）">タイトル</button>

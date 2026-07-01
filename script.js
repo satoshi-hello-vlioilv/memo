@@ -97,6 +97,7 @@ const state = {
   dirty: false, savedAt: null,
   query: '', tagFilter: null,
   searchScope: { title: true, tags: true, body: true },
+  searchHistory: [],
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc',
@@ -109,7 +110,7 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','searchScope','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','searchScope','searchSuggest','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
@@ -186,6 +187,9 @@ async function loadPrefs() {
           && (s.title || s.tags || s.body)) {
         state.searchScope = { title: s.title, tags: s.tags, body: s.body };
       }
+    }
+    if (Array.isArray(map.searchHistory)) {
+      state.searchHistory = map.searchHistory.filter(h => typeof h === 'string' && h).slice(0, 8);
     }
     return map;
   } catch { return {}; }
@@ -274,6 +278,106 @@ function makeSnippet(body, query, searchBody) {
   const after  = esc(text.slice(idx + q.length, end));
   return (start > 0 ? '…' : '') + before + `<mark>${match}</mark>` + after + (end < text.length ? '…' : '');
 }
+
+/* ============================================================
+   検索サジェスト（履歴・メモタイトル・タグを横断提案）
+   ============================================================ */
+let suggestIndex = -1;
+function highlightText(text, query) {
+  const q = query.trim();
+  if (!q) return esc(text);
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return esc(text);
+  return esc(text.slice(0, idx)) + `<mark>${esc(text.slice(idx, idx + q.length))}</mark>` + esc(text.slice(idx + q.length));
+}
+function addToHistory(text) {
+  const q = text.trim();
+  if (!q) return;
+  state.searchHistory = [q, ...state.searchHistory.filter(h => h.toLowerCase() !== q.toLowerCase())].slice(0, 8);
+  savePref('searchHistory', state.searchHistory);
+}
+function removeHistoryEntry(value) {
+  state.searchHistory = state.searchHistory.filter(h => h !== value);
+  savePref('searchHistory', state.searchHistory);
+  renderSearchSuggest(refs.searchInput.value);
+}
+function computeSearchSuggestions(query) {
+  const q = query.trim().toLowerCase();
+  const history = state.searchHistory
+    .filter(h => h.toLowerCase() !== q)
+    .filter(h => !q || h.toLowerCase().includes(q))
+    .slice(0, 6);
+
+  let memos = [];
+  let tags  = [];
+  if (q) {
+    memos = state.memos
+      .filter(m => (m.title || '').toLowerCase().includes(q))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 5);
+
+    const tagCounts = new Map();
+    for (const m of state.memos) for (const t of (m.tags || [])) {
+      if (t.toLowerCase().includes(q)) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+    }
+    tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 5);
+  }
+  return { history, memos, tags };
+}
+function renderSearchSuggest(query) {
+  const { history, memos, tags } = computeSearchSuggestions(query);
+  let html = '';
+  if (history.length) {
+    html += `<div class="search-suggest-head">履歴</div>` + history.map(h => `
+      <div class="search-suggest-item" data-kind="history" data-value="${esc(h)}">
+        <i class="fa-regular fa-clock"></i>
+        <span class="ssi-label">${highlightText(h, query)}</span>
+        <button class="ssi-del" data-del="${esc(h)}" title="履歴から削除"><i class="fa-solid fa-xmark"></i></button>
+      </div>`).join('');
+  }
+  if (memos.length) {
+    html += `<div class="search-suggest-head">メモ</div>` + memos.map(m => `
+      <div class="search-suggest-item" data-kind="memo" data-id="${m.id}">
+        <i class="fa-regular fa-file-lines"></i>
+        <span class="ssi-label">${highlightText(m.title || '無題のメモ', query)}</span>
+      </div>`).join('');
+  }
+  if (tags.length) {
+    html += `<div class="search-suggest-head">タグ</div>` + tags.map(t => `
+      <div class="search-suggest-item" data-kind="tag" data-tag="${esc(t)}">
+        <i class="fa-solid fa-tag"></i>
+        <span class="ssi-label">${highlightText(t, query)}</span>
+      </div>`).join('');
+  }
+  suggestIndex = -1;
+  refs.searchSuggest.innerHTML = html;
+  refs.searchSuggest.hidden = html.length === 0;
+}
+function updateSuggestActive(items) {
+  items.forEach((el, i) => el.classList.toggle('active', i === suggestIndex));
+  if (suggestIndex >= 0 && items[suggestIndex]) items[suggestIndex].scrollIntoView({ block: 'nearest' });
+}
+async function activateSearchSuggest(item) {
+  const kind = item.dataset.kind;
+  refs.searchSuggest.hidden = true;
+  suggestIndex = -1;
+  if (kind === 'history') {
+    refs.searchInput.value = item.dataset.value;
+    state.query = item.dataset.value;
+    refs.searchClear.hidden = state.query.length === 0;
+    addToHistory(item.dataset.value);
+    renderList();
+  } else if (kind === 'memo') {
+    addToHistory(refs.searchInput.value);
+    const id = Number(item.dataset.id);
+    if (id !== state.currentId && await guardDirty()) openMemo(id);
+  } else if (kind === 'tag') {
+    addToHistory(refs.searchInput.value);
+    state.tagFilter = item.dataset.tag;
+    renderList();
+  }
+}
+
 function renderMemoItem(m) {
   const active  = m.id === state.currentId ? ' active' : '';
   const title   = esc(m.title) || '無題のメモ';
@@ -1529,7 +1633,47 @@ function bindEvents() {
     refs.searchClear.hidden = state.query.length === 0;
     renderList();
   }, 140);
-  refs.searchInput.addEventListener('input', onSearch);
+  refs.searchInput.addEventListener('input', () => {
+    onSearch();
+    renderSearchSuggest(refs.searchInput.value);
+  });
+  refs.searchInput.addEventListener('focus', () => renderSearchSuggest(refs.searchInput.value));
+  refs.searchInput.addEventListener('blur', () => addToHistory(refs.searchInput.value));
+  refs.searchInput.addEventListener('keydown', e => {
+    if (refs.searchSuggest.hidden) {
+      if (e.key === 'Enter') addToHistory(refs.searchInput.value);
+      return;
+    }
+    const items = $$('.search-suggest-item', refs.searchSuggest);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      suggestIndex = Math.min(suggestIndex + 1, items.length - 1);
+      updateSuggestActive(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      suggestIndex = Math.max(suggestIndex - 1, -1);
+      updateSuggestActive(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (suggestIndex >= 0 && items[suggestIndex]) {
+        activateSearchSuggest(items[suggestIndex]);
+      } else {
+        addToHistory(refs.searchInput.value);
+        refs.searchSuggest.hidden = true;
+      }
+    } else if (e.key === 'Escape') {
+      refs.searchSuggest.hidden = true;
+      suggestIndex = -1;
+    }
+  });
+  refs.searchSuggest.addEventListener('mousedown', e => e.preventDefault());
+  refs.searchSuggest.addEventListener('click', e => {
+    const delBtn = e.target.closest('.ssi-del');
+    if (delBtn) { e.stopPropagation(); removeHistoryEntry(delBtn.dataset.del); return; }
+    const item = e.target.closest('.search-suggest-item');
+    if (item) { activateSearchSuggest(item); return; }
+    refs.searchSuggest.hidden = true;   /* 見出し等の余白クリックでも閉じる（下の要素を覆ったままにしない） */
+  });
   refs.searchClear.addEventListener('click', () => {
     refs.searchInput.value = '';
     state.query = '';
@@ -1623,9 +1767,17 @@ function bindEvents() {
     refs.tagsSuggest.hidden = true;
     markDirty(); renderTagsPreview(); refs.tagsInput.focus();
   });
+  const searchBoxEl = refs.searchInput.closest('.search-box');
   document.addEventListener('click', e => {
     if (!refs.tagsSuggest.contains(e.target) && e.target !== refs.tagsInput) {
       refs.tagsSuggest.hidden = true;
+    }
+    /* searchClear など .search-box 内のクリックでは閉じない
+       （clear ボタンの focus() 呼び出しで再表示された直後に、
+       同じクリックのバブリングで閉じてしまうのを防ぐ） */
+    if (!searchBoxEl.contains(e.target)) {
+      refs.searchSuggest.hidden = true;
+      suggestIndex = -1;
     }
   });
 

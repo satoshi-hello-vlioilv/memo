@@ -237,16 +237,26 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .search-suggest-item:hover .ssi-del{opacity:1}
 .search-suggest-item .ssi-del:hover{background:rgba(194,69,50,.7);color:#fff}
 
-.search-scope{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
+.search-scope{display:flex;align-items:center;gap:8px;padding:0 14px 10px}
+.search-scope-label{font-size:10px;color:var(--inv-sub);font-weight:700;letter-spacing:.04em;flex-shrink:0}
+.scope-group{
+  display:flex;flex:1;min-width:0;
+  border:1px solid var(--ink-700);border-radius:7px;
+  overflow:hidden;
+}
 .scope-chip{
-  height:22px;padding:0 10px;border-radius:11px;
+  flex:1;min-width:0;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  height:24px;
   font-size:10.5px;font-weight:600;
   background:var(--ink-850);color:var(--inv-sub);
-  border:1px solid var(--ink-700);
-  transition:background-color .12s,color .12s,border-color .12s;
+  border:none;border-right:1px solid var(--ink-700);
+  transition:background-color .12s,color .12s;
 }
-.scope-chip:hover{color:var(--inv-text);border-color:var(--primary)}
-.scope-chip.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.scope-chip:last-child{border-right:none}
+.scope-chip i{font-size:9.5px}
+.scope-chip:hover{background:var(--ink-800);color:var(--inv-text)}
+.scope-chip.active{background:var(--primary);color:#fff}
 
 .tagbar{
   display:flex;flex-wrap:wrap;gap:6px;

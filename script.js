@@ -1696,6 +1696,8 @@ function bindEvents() {
       return;
     }
     state.searchScope = next;
+    state.query = refs.searchInput.value;   /* デバウンス待ちで未反映の入力値も取り込んでから再検索する */
+    refs.searchClear.hidden = state.query.length === 0;
     applySearchScopeState();
     savePref('searchScope', state.searchScope);
     renderList();

@@ -95,7 +95,7 @@ const state = {
   memos: [], formats: [], images: [], tagsMaster: [],
   currentId: null,
   dirty: false, savedAt: null,
-  query: '', tagFilter: null,
+  query: '', tagFilter: null, imageOnly: false,
   searchScope: { title: true, tags: true, body: true },
   searchHistory: [],
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
@@ -110,7 +110,7 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','searchScope','searchSuggest','tagBar','listCount','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','searchScope','searchSuggest','tagBar','listCount','btnImageFilter','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
@@ -191,6 +191,7 @@ async function loadPrefs() {
     if (Array.isArray(map.searchHistory)) {
       state.searchHistory = map.searchHistory.filter(h => typeof h === 'string' && h).slice(0, 8);
     }
+    if (typeof map.imageOnly === 'boolean') state.imageOnly = map.imageOnly;
     return map;
   } catch { return {}; }
 }
@@ -253,6 +254,7 @@ function filteredMemos() {
   const scope = state.searchScope;
   return state.memos
     .filter(m => {
+      if (state.imageOnly && !(m.imageCount > 0)) return false;
       if (state.tagFilter && !(m.tags || []).includes(state.tagFilter)) return false;
       if (!q) return true;
       const inTitle = scope.title && (m.title || '').toLowerCase().includes(q);
@@ -423,7 +425,7 @@ function renderList() {
        強制的に開く（「今日」等の未展開グループに隠れて検索結果が
        見えなくなるのを防ぐ）。設定自体は変更しないため、絞り込みを
        解除すれば元の開閉状態に戻る。 */
-    const filtering = !!(state.query.trim() || state.tagFilter);
+    const filtering = !!(state.query.trim() || state.tagFilter || state.imageOnly);
     html = keys.map(key => {
       const memos     = groupMap.get(key);
       const collapsed = !filtering && !state.expandedGroups.has(key);
@@ -443,8 +445,8 @@ function renderList() {
 
   const empty = list.length === 0;
   refs.listEmpty.hidden = !empty;
-  refs.listEmptyMsg.innerHTML = (state.query || state.tagFilter)
-    ? '条件に一致するメモがありません。<br>検索語・検索範囲・タグを見直してください。'
+  refs.listEmptyMsg.innerHTML = (state.query || state.tagFilter || state.imageOnly)
+    ? '条件に一致するメモがありません。<br>検索語・検索範囲・タグ・画像フィルタを見直してください。'
     : 'メモはまだありません。<br>「新規メモ」から作成できます。';
   renderTagBar();
 }
@@ -1349,6 +1351,10 @@ function applyGroupByDateState() {
   refs.groupFieldSelect.hidden = !state.groupByDate;
   refs.groupFieldSelect.value = state.groupDateField;
 }
+function applyImageFilterState() {
+  refs.btnImageFilter.classList.toggle('active', state.imageOnly);
+  refs.btnImageFilter.title = state.imageOnly ? '画像ありのメモのみ表示中（クリックで解除）' : '画像ありのメモのみ表示';
+}
 function applySortDirState() {
   const asc = state.sortDir === 'asc';
   refs.btnSortOrder.innerHTML = asc
@@ -1953,6 +1959,12 @@ function bindEvents() {
     savePref('groupByDate', state.groupByDate);
     renderList();
   });
+  refs.btnImageFilter.addEventListener('click', () => {
+    state.imageOnly = !state.imageOnly;
+    applyImageFilterState();
+    savePref('imageOnly', state.imageOnly);
+    renderList();
+  });
   refs.groupFieldSelect.addEventListener('change', () => {
     state.groupDateField = refs.groupFieldSelect.value;
     state.expandedGroups.clear();
@@ -2035,6 +2047,7 @@ async function init() {
   applyGroupByDateState();
   applySortDirState();
   applySearchScopeState();
+  applyImageFilterState();
 
   await refreshMemos();
   await refreshFormats();

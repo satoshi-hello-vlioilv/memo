@@ -43,9 +43,12 @@
       <div class="search-suggest" id="searchSuggest" hidden=""></div>
     </div>
     <div class="search-scope" id="searchScope">
-      <button class="scope-chip active" data-scope="title" title="タイトルを検索対象に含める（クリックで切替）">タイトル</button>
-      <button class="scope-chip active" data-scope="tags" title="タグを検索対象に含める（クリックで切替）">タグ</button>
-      <button class="scope-chip active" data-scope="body" title="本文を検索対象に含める（クリックで切替）">本文</button>
+      <span class="search-scope-label">検索対象</span>
+      <div class="scope-group">
+        <button class="scope-chip active" data-scope="title" title="タイトルを検索対象に含める（クリックで切替）"><i class="fa-solid fa-heading"></i> タイトル</button>
+        <button class="scope-chip active" data-scope="tags" title="タグを検索対象に含める（クリックで切替）"><i class="fa-solid fa-tag"></i> タグ</button>
+        <button class="scope-chip active" data-scope="body" title="本文を検索対象に含める（クリックで切替）"><i class="fa-solid fa-align-left"></i> 本文</button>
+      </div>
     </div>
     <div class="tagbar" id="tagBar"></div>
     <div class="list-meta">

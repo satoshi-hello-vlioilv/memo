@@ -102,6 +102,7 @@ const state = {
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc',
   showLineMarks: false,
+  imgPanelWidth: 352,
 };
 
 /* ============================================================
@@ -119,7 +120,7 @@ function collectRefs() {
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
-    'imgPanel','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
+    'imgPanel','imgPanelResizer','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
     'thumbSize','thumbGrid','imgEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
     'lbClose','lbStage','lbImg','lbPrev','lbNext',
@@ -194,6 +195,7 @@ async function loadPrefs() {
     }
     if (typeof map.imageOnly === 'boolean') state.imageOnly = map.imageOnly;
     if (typeof map.showLineMarks === 'boolean') state.showLineMarks = map.showLineMarks;
+    if (typeof map.imgPanelWidth === 'number') state.imgPanelWidth = map.imgPanelWidth;
     return map;
   } catch { return {}; }
 }
@@ -692,8 +694,8 @@ function serializeBody() {
     if (node.nodeType === Node.TEXT_NODE) {
       result += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
-      if (node.classList && node.classList.contains('line-mark')) {
-        return; /* 表示専用の改行マークは読み飛ばす */
+      if (node.classList && (node.classList.contains('line-mark') || node.classList.contains('current-line-hl'))) {
+        return; /* 表示専用のオーバーレイ要素(改行マーク・現在行ハイライト)は読み飛ばす */
       } else if (node.classList && node.classList.contains('body-img')) {
         result += `[img:${node.dataset.id}:${node.dataset.align || 'c'}:${node.dataset.size || 'fit'}]`;
       } else if (node.tagName === 'BR') {
@@ -724,7 +726,13 @@ function deserializeBody(text) {
    置けず文字入力できなくなる。末尾画像の後ろに改行を補い、
    常に編集可能な行が残るようにする。 */
 function ensureTrailingEditable() {
-  const last = refs.bodyInput.lastChild;
+  /* 改行マーク・カーソルハイライトは表示専用オーバーレイのため、
+     末尾判定の対象からは読み飛ばす */
+  let last = refs.bodyInput.lastChild;
+  while (last && last.nodeType === Node.ELEMENT_NODE && last.classList &&
+         (last.classList.contains('line-mark') || last.classList.contains('current-line-hl'))) {
+    last = last.previousSibling;
+  }
   if (last && last.nodeType === Node.ELEMENT_NODE &&
       last.classList && last.classList.contains('body-img')) {
     refs.bodyInput.appendChild(document.createElement('br'));
@@ -966,6 +974,47 @@ function rebuildLineMarks() {
 }
 const rebuildLineMarksDebounced = debounce(rebuildLineMarks, 200);
 
+/* カーソルのある行を薄くハイライトし、キャレット位置を見失わないようにする。
+   フォーカスが本文エディタに無い場合は非表示にする。 */
+function updateCursorHighlight() {
+  let hl = refs.bodyInput.querySelector('.current-line-hl');
+  const sel = window.getSelection();
+  const active = document.activeElement === refs.bodyInput &&
+    sel && sel.rangeCount > 0 && refs.bodyInput.contains(sel.anchorNode);
+  /* 本文が完全に空の場合はハイライトを出さない。ここで要素を追加すると
+     :empty::before によるプレースホルダー表示が消えてしまうため */
+  const hasRealContent = [...refs.bodyInput.childNodes].some(n => n !== hl);
+  if (!active || !hasRealContent) {
+    if (hl) hl.remove();
+    return;
+  }
+  const range = sel.getRangeAt(0).cloneRange();
+  range.collapse(true);
+  let rect = range.getClientRects()[0];
+  if (!rect) {
+    /* 空行など、文字境界の collapsed Range が矩形を返さない場合は
+       キャレットを含む要素自体の矩形にフォールバックする */
+    const node = range.startContainer;
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    rect = el && el.getBoundingClientRect();
+  }
+  if (!rect || rect.height === 0) { if (hl) hl.remove(); return; }
+  if (!hl) {
+    hl = document.createElement('span');
+    hl.className = 'current-line-hl';
+    hl.contentEditable = 'false';
+    /* 先頭に挿入すると、末尾を指す (bodyInput, offset) 形式の既存 Range/Selection の
+       境界がこの新要素を含むようずれてしまう(挿入位置の index 分だけ offset が調整される
+       DOM の仕様のため)。末尾へ追加すれば既存の選択範囲に影響しない。 */
+    refs.bodyInput.appendChild(hl);
+  }
+  const containerRect = refs.bodyInput.getBoundingClientRect();
+  const scrollTop = refs.bodyInput.scrollTop;
+  const top = rect.top - containerRect.top + scrollTop;
+  hl.style.top = Math.round(top - 3) + 'px';
+  hl.style.height = Math.round(rect.height + 6) + 'px';
+}
+
 /* ============================================================
    本文エディタの右クリックメニュー（執筆補助）
    ============================================================ */
@@ -1137,6 +1186,19 @@ async function removeImage(id) {
 }
 function applyThumbSize() {
   refs.thumbGrid.style.setProperty('--thumb', state.thumbSize + 'px');
+}
+
+/* 画像パネルの幅はドラッグで自由に変更できる。ウィンドウ幅に対して
+   サイドバー・本文編集領域が潰れないよう、適用のたびに範囲をクランプする。 */
+function imgPanelWidthBounds() {
+  const min = 260;
+  const max = Math.max(min, Math.min(720, window.innerWidth - 650));
+  return { min, max };
+}
+function applyImgPanelWidth() {
+  const { min, max } = imgPanelWidthBounds();
+  const w = Math.min(Math.max(state.imgPanelWidth, min), max);
+  document.documentElement.style.setProperty('--imgpanel-w', w + 'px');
 }
 
 /* ============================================================
@@ -1881,8 +1943,13 @@ function bindEvents() {
     }
   });
 
-  refs.bodyInput.addEventListener('input', () => { markDirty(); renderCharCount(); rebuildLineMarksDebounced(); });
+  refs.bodyInput.addEventListener('input', () => { markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); });
   refs.bodyInput.addEventListener('keydown', e => {
+    /* Enter などブラウザ既定の編集操作は、キャレット直後にある要素を
+       「続きの内容」とみなして分割構造に巻き込むことがある。カーソル行
+       ハイライトは表示専用のオーバーレイなので、キー処理の前に一旦取り除いて
+       おく（input/selectionchange のタイミングで直後に作り直される）。 */
+    refs.bodyInput.querySelector('.current-line-hl')?.remove();
     if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
       insertBodyText('\t');
@@ -1896,7 +1963,15 @@ function bindEvents() {
   refs.bodyInput.addEventListener('scroll', () => {
     const hovered = refs.bodyInput.querySelector('.body-img:hover');
     if (hovered) positionImgCtrl(hovered);
+    updateCursorHighlight();
   }, { passive: true });
+  /* カーソル位置ハイライト: フォーカス中は選択範囲の変化を全て追従させる */
+  refs.bodyInput.addEventListener('focus', updateCursorHighlight);
+  refs.bodyInput.addEventListener('blur', () => {
+    const hl = refs.bodyInput.querySelector('.current-line-hl');
+    if (hl) hl.remove();
+  });
+  document.addEventListener('selectionchange', updateCursorHighlight);
   /* 画像コントロールのクリックでキャレットが動かないよう防止／サイズ変更の開始 */
   refs.bodyInput.addEventListener('mousedown', e => {
     const resizeHandle = e.target.closest('.body-img__resize');
@@ -2057,6 +2132,26 @@ function bindEvents() {
     applyThumbSize();
     savePrefDebounced('thumbSize', state.thumbSize);
   });
+  /* --- 画像パネルの幅をドラッグで調整 --- */
+  refs.imgPanelResizer.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = refs.imgPanel.getBoundingClientRect().width;
+    document.body.classList.add('resizing-imgpanel');
+    const onMove = ev => {
+      state.imgPanelWidth = Math.round(startWidth - (ev.clientX - startX));
+      applyImgPanelWidth();
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('resizing-imgpanel');
+      savePref('imgPanelWidth', state.imgPanelWidth);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+  window.addEventListener('resize', applyImgPanelWidth);
   refs.btnPanelToggle.addEventListener('click', () => togglePanel(false));
   refs.btnPanelOpen.addEventListener('click', () => togglePanel(true));
   refs.btnSidebarClose.addEventListener('click', toggleSidebar);
@@ -2152,6 +2247,7 @@ async function init() {
   const prefs = await loadPrefs();
   refs.thumbSize.value = state.thumbSize;
   applyThumbSize();
+  applyImgPanelWidth();
   applyPanelState();
   applySidebarState();
   applyGroupByDateState();

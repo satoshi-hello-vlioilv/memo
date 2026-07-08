@@ -101,6 +101,7 @@ const state = {
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc',
+  showLineMarks: false,
 };
 
 /* ============================================================
@@ -114,7 +115,7 @@ function collectRefs() {
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
-    'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime',
+    'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime','btnShowMarks',
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
@@ -192,6 +193,7 @@ async function loadPrefs() {
       state.searchHistory = map.searchHistory.filter(h => typeof h === 'string' && h).slice(0, 8);
     }
     if (typeof map.imageOnly === 'boolean') state.imageOnly = map.imageOnly;
+    if (typeof map.showLineMarks === 'boolean') state.showLineMarks = map.showLineMarks;
     return map;
   } catch { return {}; }
 }
@@ -245,7 +247,7 @@ async function refreshMemos() {
 function sortField() {
   return state.groupByDate ? state.groupDateField : 'updatedAt';
 }
-const BODY_IMG_MARKER_RE = /\[img:\d+(?::[lcr])?(?::(?:[sml]|\d+))?\]/g;
+const BODY_IMG_MARKER_RE = /\[img:\d+(?::[lcr])?(?::(?:[sml]|\d+|fit))?\]/g;
 const stripImgMarkers = text => String(text ?? '').replace(BODY_IMG_MARKER_RE, ' ').replace(/\s+/g, ' ').trim();
 function filteredMemos() {
   const q = state.query.trim().toLowerCase();
@@ -533,6 +535,7 @@ function newMemo() {
   refs.titleInput.value = '';
   refs.tagsInput.value = '';
   refs.bodyInput.innerHTML = '';
+  rebuildLineMarks();
   showSheet();
   renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
   loadImages();
@@ -628,12 +631,12 @@ function createInlineImg(imgId, align, size) {
   wrap.contentEditable = 'false';
   wrap.dataset.id = imgId;
   wrap.dataset.align = align || 'c';
-  const sizeVal = size || 'm';
+  const sizeVal = size || 'fit';
   wrap.dataset.size = sizeVal;
   wrap.setAttribute('draggable', 'true');
   wrap.title = 'ダブルクリックで拡大／ドラッグで移動／端をドラッグでサイズ変更';
   if (img) {
-    const isPreset = sizeVal === 's' || sizeVal === 'm' || sizeVal === 'l';
+    const isPreset = sizeVal === 's' || sizeVal === 'm' || sizeVal === 'l' || sizeVal === 'fit';
     const customPx = isPreset ? null : parseInt(sizeVal, 10);
     const widthStyle = Number.isFinite(customPx) ? ` style="width:${customPx}px"` : '';
     wrap.innerHTML =
@@ -641,11 +644,13 @@ function createInlineImg(imgId, align, size) {
       `<span class="body-img__resize" title="ドラッグでサイズ変更"></span>` +
       `<span class="body-img__ctrl">` +
         `<button class="body-img__zoom" title="拡大表示"><i class="fa-solid fa-magnifying-glass-plus"></i></button>` +
+        `<button class="body-img__copy" title="画像をコピー"><i class="fa-regular fa-copy"></i></button>` +
         `<span class="body-img__div"></span>` +
         `<button class="body-img__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
         `<button class="body-img__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
         `<button class="body-img__pos${align==='r'?' on':''}" data-a="r" title="右寄せ"><i class="fa-solid fa-align-right"></i></button>` +
         `<select class="body-img__size" title="表示サイズ（プリセット）">` +
+          `<option value="fit"${sizeVal==='fit'?' selected':''}>幅に合わせる</option>` +
           `<option value="s"${sizeVal==='s'?' selected':''}>小</option>` +
           `<option value="m"${sizeVal==='m'?' selected':''}>中</option>` +
           `<option value="l"${sizeVal==='l'?' selected':''}>大</option>` +
@@ -669,12 +674,12 @@ function addTextWithBreaks(parent, text) {
 
 function textToFragment(text) {
   const frag = document.createDocumentFragment();
-  const re = /\[img:(\d+)(?::([lcr]))?(?::([sml]|\d+))?\]/g;
+  const re = /\[img:(\d+)(?::([lcr]))?(?::([sml]|\d+|fit))?\]/g;
   let last = 0, m;
   re.lastIndex = 0;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) addTextWithBreaks(frag, text.slice(last, m.index));
-    frag.appendChild(createInlineImg(Number(m[1]), m[2] || 'c', m[3] || 'm'));
+    frag.appendChild(createInlineImg(Number(m[1]), m[2] || 'c', m[3] || 'fit'));
     last = m.index + m[0].length;
   }
   if (last < text.length) addTextWithBreaks(frag, text.slice(last));
@@ -687,8 +692,10 @@ function serializeBody() {
     if (node.nodeType === Node.TEXT_NODE) {
       result += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
-      if (node.classList && node.classList.contains('body-img')) {
-        result += `[img:${node.dataset.id}:${node.dataset.align || 'c'}:${node.dataset.size || 'm'}]`;
+      if (node.classList && node.classList.contains('line-mark')) {
+        return; /* 表示専用の改行マークは読み飛ばす */
+      } else if (node.classList && node.classList.contains('body-img')) {
+        result += `[img:${node.dataset.id}:${node.dataset.align || 'c'}:${node.dataset.size || 'fit'}]`;
       } else if (node.tagName === 'BR') {
         result += '\n';
       } else if (node.tagName === 'DIV' || node.tagName === 'P') {
@@ -706,9 +713,11 @@ function serializeBody() {
 
 function deserializeBody(text) {
   refs.bodyInput.innerHTML = '';
-  if (!text) return;
-  refs.bodyInput.appendChild(textToFragment(text));
-  ensureTrailingEditable();
+  if (text) {
+    refs.bodyInput.appendChild(textToFragment(text));
+    ensureTrailingEditable();
+  }
+  rebuildLineMarks();
 }
 
 /* 末尾が（編集不可な）画像のままだと、その後ろにキャレットを
@@ -828,7 +837,7 @@ function insertBodyText(text, caretAt = null) {
 
 function insertImageRef(imgId) {
   refs.bodyInput.focus();
-  const imgEl = createInlineImg(imgId, 'c', 'm');
+  const imgEl = createInlineImg(imgId, 'c', 'fit');
   const sel = window.getSelection();
   let range;
   if (sel && sel.rangeCount > 0 && refs.bodyInput.contains(sel.getRangeAt(0).startContainer)) {
@@ -873,11 +882,89 @@ function startImageResize(wrap, startEvent) {
     wrap.dataset.size = String(Math.round(imgEl.getBoundingClientRect().width));
     const sel = wrap.querySelector('.body-img__size');
     if (sel) sel.value = 'custom';
-    markDirty(); renderCharCount();
+    markDirty(); renderCharCount(); rebuildLineMarksDebounced();
   };
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onUp);
 }
+
+/* ホバーコントロールバーの位置を画像の実測位置から都度計算する。
+   CSS の包含ブロックに頼らないため、配置・サイズ・スクロール状態に
+   関わらず常に画像の直上（エディタ範囲内にクランプ）に表示される。 */
+function positionImgCtrl(wrap) {
+  const ctrl = wrap.querySelector('.body-img__ctrl');
+  if (!ctrl) return;
+  const wrapRect = wrap.getBoundingClientRect();
+  const editorRect = refs.bodyInput.getBoundingClientRect();
+  const ctrlH = ctrl.offsetHeight || 34;
+  const ctrlW = ctrl.offsetWidth || 180;
+  let top = wrapRect.top + 6;
+  top = Math.max(editorRect.top + 4, Math.min(top, editorRect.bottom - ctrlH - 4));
+  let left = wrapRect.left + wrapRect.width / 2;
+  left = Math.max(editorRect.left + ctrlW / 2 + 4, Math.min(left, editorRect.right - ctrlW / 2 - 4));
+  ctrl.style.top = Math.round(top) + 'px';
+  ctrl.style.left = Math.round(left) + 'px';
+}
+
+/* 本文内画像をシステムのクリップボードにコピー（フォーマットの
+   互換性を優先し、常に PNG として書き込む） */
+async function blobToPngBlob(blob) {
+  if (blob.type === 'image/png') return blob;
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+  });
+}
+async function copyInlineImage(wrap) {
+  const id = Number(wrap.dataset.id);
+  const img = state.images.find(x => x.id === id);
+  if (!img) { toast('この画像は登録されていません', 'error'); return; }
+  try {
+    const pngBlob = await blobToPngBlob(img.blob);
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+    toast('画像をクリップボードにコピーしました', 'success');
+  } catch (err) {
+    console.error(err);
+    toast('画像のコピーに失敗しました', 'error');
+  }
+}
+
+/* ============================================================
+   改行マークの視覚化（表示専用・本文内容には含まれない） */
+function applyShowLineMarksState() {
+  refs.btnShowMarks.classList.toggle('active', state.showLineMarks);
+  refs.btnShowMarks.title = state.showLineMarks ? '改行マークを非表示' : '改行マークを表示';
+}
+function rebuildLineMarks() {
+  $$('.line-mark', refs.bodyInput).forEach(el => el.remove());
+  if (!state.showLineMarks) return;
+  const containerRect = refs.bodyInput.getBoundingClientRect();
+  const scrollTop = refs.bodyInput.scrollTop;
+  const scrollLeft = refs.bodyInput.scrollLeft;
+  const frag = document.createDocumentFragment();
+  const addMark = rect => {
+    if (!rect || rect.height === 0) return;   /* 非表示状態（display:none 等）は無視 */
+    const mark = document.createElement('span');
+    mark.className = 'line-mark';
+    mark.contentEditable = 'false';
+    mark.textContent = '↵';
+    mark.style.top  = Math.round(rect.top  - containerRect.top  + scrollTop)  + 'px';
+    mark.style.left = Math.round(rect.left - containerRect.left + scrollLeft + 2) + 'px';
+    frag.appendChild(mark);
+  };
+  /* <br> による改行（音声入力・フォーマット適用などプログラム的な挿入） */
+  for (const br of $$('br', refs.bodyInput)) addMark(br.getBoundingClientRect());
+  /* <div>/<p> による改行（Enter キーを押した際のブラウザ既定の段落化）
+     文字境界の collapsed Range は getClientRects() が空配列を返すことがあり
+     getBoundingClientRect() が全て 0 になるため、要素自体の矩形を使う */
+  for (const block of $$('div, p', refs.bodyInput)) addMark(block.getBoundingClientRect());
+  refs.bodyInput.appendChild(frag);
+}
+const rebuildLineMarksDebounced = debounce(rebuildLineMarks, 200);
 
 /* ============================================================
    本文エディタの右クリックメニュー（執筆補助）
@@ -1794,13 +1881,22 @@ function bindEvents() {
     }
   });
 
-  refs.bodyInput.addEventListener('input', () => { markDirty(); renderCharCount(); });
+  refs.bodyInput.addEventListener('input', () => { markDirty(); renderCharCount(); rebuildLineMarksDebounced(); });
   refs.bodyInput.addEventListener('keydown', e => {
     if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
       insertBodyText('\t');
     }
   });
+  /* ホバー中の画像のコントロールバー位置を実測して追従させる */
+  refs.bodyInput.addEventListener('mouseover', e => {
+    const wrap = e.target.closest('.body-img');
+    if (wrap) positionImgCtrl(wrap);
+  });
+  refs.bodyInput.addEventListener('scroll', () => {
+    const hovered = refs.bodyInput.querySelector('.body-img:hover');
+    if (hovered) positionImgCtrl(hovered);
+  }, { passive: true });
   /* 画像コントロールのクリックでキャレットが動かないよう防止／サイズ変更の開始 */
   refs.bodyInput.addEventListener('mousedown', e => {
     const resizeHandle = e.target.closest('.body-img__resize');
@@ -1825,6 +1921,12 @@ function bindEvents() {
       if (wrap) openInlineImage(wrap);
       return;
     }
+    const copyBtn = e.target.closest('.body-img__copy');
+    if (copyBtn) {
+      const wrap = copyBtn.closest('.body-img');
+      if (wrap) copyInlineImage(wrap);
+      return;
+    }
     const posBtn = e.target.closest('.body-img__pos');
     if (posBtn) {
       const wrap = posBtn.closest('.body-img');
@@ -1837,7 +1939,7 @@ function bindEvents() {
     const delBtn = e.target.closest('.body-img__del');
     if (delBtn) {
       const wrap = delBtn.closest('.body-img');
-      if (wrap) { wrap.remove(); markDirty(); renderCharCount(); }
+      if (wrap) { wrap.remove(); markDirty(); renderCharCount(); rebuildLineMarksDebounced(); }
     }
   });
   refs.bodyInput.addEventListener('change', e => {
@@ -1848,7 +1950,7 @@ function bindEvents() {
         wrap.dataset.size = sel.value;
         const imgEl = wrap.querySelector('.body-img__img');
         if (imgEl) imgEl.style.width = '';   /* プリセット選択時はカスタム幅を解除 */
-        markDirty(); renderCharCount();
+        markDirty(); renderCharCount(); rebuildLineMarksDebounced();
       }
     }
   });
@@ -1886,7 +1988,7 @@ function bindEvents() {
     ensureTrailingEditable();
     placeCaretAfter(draggedImg);
     endImgDrag();
-    markDirty(); renderCharCount();
+    markDirty(); renderCharCount(); rebuildLineMarksDebounced();
   });
   document.addEventListener('dragend', endImgDrag);
 
@@ -1927,6 +2029,14 @@ function bindEvents() {
 
   /* --- フォーマット適用 --- */
   refs.btnApplyFormat.addEventListener('click', applyFormat);
+
+  /* --- 改行マークの表示切替 --- */
+  refs.btnShowMarks.addEventListener('click', () => {
+    state.showLineMarks = !state.showLineMarks;
+    applyShowLineMarksState();
+    savePref('showLineMarks', state.showLineMarks);
+    rebuildLineMarks();
+  });
 
   /* --- 画像 --- */
   refs.btnAddImage.addEventListener('click', () => refs.fileInput.click());
@@ -2048,6 +2158,7 @@ async function init() {
   applySortDirState();
   applySearchScopeState();
   applyImageFilterState();
+  applyShowLineMarksState();
 
   await refreshMemos();
   await refreshFormats();

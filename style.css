@@ -481,6 +481,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
   background:#FCFBF7;
 }
 .tool-group{display:flex;align-items:center;gap:9px}
+.toolbar .icon-btn.active{color:var(--primary);background:var(--primary-soft)}
 .fmt-select{
   height:34px;min-width:210px;max-width:300px;
   padding:0 32px 0 12px;
@@ -535,6 +536,8 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .body-img[data-size="s"] .body-img__img{width:120px}
 .body-img[data-size="m"] .body-img__img{width:240px;max-width:100%}
 .body-img[data-size="l"] .body-img__img{width:100%;max-width:100%}
+.body-img[data-size="fit"]{display:block;float:none;width:100%;margin:10px 0}
+.body-img[data-size="fit"] .body-img__img{width:100%;max-width:100%}
 .body-img__img{display:block;height:auto;max-width:100%;border-radius:6px;border:1px solid var(--line);-webkit-user-drag:none;user-drag:none}
 .body-img__resize{
   position:absolute;right:1px;bottom:1px;
@@ -546,13 +549,18 @@ button:disabled{cursor:not-allowed;opacity:.45}
   opacity:0;transition:opacity .15s;pointer-events:none;
 }
 .body-img:hover .body-img__resize,.body-img.resizing .body-img__resize{opacity:1;pointer-events:all}
+/* 位置は position:fixed とし、hover 時に JS（positionImgCtrl）が画像の実測位置から
+   top/left を都度計算する。CSS の包含ブロック依存をなくし、画像がどんな配置・
+   サイズ・スクロール状態でも常に画像の直上に正しく表示されるようにする。 */
 .body-img__ctrl{
-  position:absolute;top:6px;left:50%;transform:translateX(-50%);
+  position:fixed;top:-9999px;left:-9999px;
+  transform:translateX(-50%);
   display:flex;align-items:center;gap:4px;
   background:rgba(14,26,33,.78);
   border-radius:7px;padding:4px 8px;
   opacity:0;transition:opacity .15s;pointer-events:none;
   white-space:nowrap;
+  z-index:50;
 }
 .body-img:hover .body-img__ctrl{opacity:1;pointer-events:all}
 .body-img__pos{
@@ -569,6 +577,13 @@ button:disabled{cursor:not-allowed;opacity:.45}
   transition:background-color .12s,color .12s;
 }
 .body-img__zoom:hover{background:rgba(255,255,255,.2);color:#fff}
+.body-img__copy{
+  width:26px;height:26px;border-radius:5px;
+  display:inline-flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,.7);font-size:11px;
+  transition:background-color .12s,color .12s;
+}
+.body-img__copy:hover{background:rgba(255,255,255,.2);color:#fff}
 .body-img__div{width:1px;height:16px;background:rgba(255,255,255,.22);margin:0 2px}
 .body-img__size{
   height:26px;padding:0 6px;
@@ -619,12 +634,19 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .interim-bar i{flex-shrink:0;font-size:12px}
 .interim-bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .body-editable{
+  position:relative;
   flex:1;width:100%;border:none;outline:none;background:none;
   padding:12px 20px 16px;
   font-size:15px;line-height:1.9;letter-spacing:.01em;
   color:var(--text);
   overflow-y:auto;min-height:0;
   white-space:pre-wrap;word-wrap:break-word;
+}
+.line-mark{
+  position:absolute;
+  color:var(--primary);opacity:.5;
+  font-size:12px;line-height:1;
+  pointer-events:none;user-select:none;
 }
 .body-editable:empty::before{
   content:attr(data-placeholder);
@@ -687,7 +709,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
   display:grid;
   grid-template-columns:repeat(auto-fill,minmax(var(--thumb),1fr));
   gap:12px;align-content:start;
-  padding:14px;
+  padding:14px 14px 100px;
 }
 .thumb{display:flex;flex-direction:column;gap:5px}
 .thumb-frame{

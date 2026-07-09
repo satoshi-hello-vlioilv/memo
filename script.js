@@ -626,6 +626,12 @@ function urlOf(img) {
    ============================================================ */
 let draggedImg = null;   /* 本文内でドラッグ移動中の画像要素 */
 
+/* 端をドラッグして自由変更した際の「カスタム」表示ラベル。
+   実際の px 幅を添えることで、プリセットと何が違うのか一目で分かるようにする */
+function customSizeLabel(px) {
+  return Number.isFinite(px) ? `カスタム（${px}px）` : 'カスタム';
+}
+
 function createInlineImg(imgId, align, size) {
   const img = state.images.find(x => x.id === imgId);
   const wrap = document.createElement('span');
@@ -641,6 +647,7 @@ function createInlineImg(imgId, align, size) {
     const isPreset = sizeVal === 's' || sizeVal === 'm' || sizeVal === 'l' || sizeVal === 'fit';
     const customPx = isPreset ? null : parseInt(sizeVal, 10);
     const widthStyle = Number.isFinite(customPx) ? ` style="width:${customPx}px"` : '';
+    const customLabel = Number.isFinite(customPx) ? customSizeLabel(customPx) : customSizeLabel();
     wrap.innerHTML =
       `<img src="${urlOf(img)}" class="body-img__img" alt="${esc(img.name)}" draggable="false"${widthStyle}>` +
       `<span class="body-img__resize" title="ドラッグでサイズ変更"></span>` +
@@ -651,12 +658,12 @@ function createInlineImg(imgId, align, size) {
         `<button class="body-img__pos${align==='l'?' on':''}" data-a="l" title="左寄せ"><i class="fa-solid fa-align-left"></i></button>` +
         `<button class="body-img__pos${align==='c'?' on':''}" data-a="c" title="中央"><i class="fa-solid fa-align-center"></i></button>` +
         `<button class="body-img__pos${align==='r'?' on':''}" data-a="r" title="右寄せ"><i class="fa-solid fa-align-right"></i></button>` +
-        `<select class="body-img__size" title="表示サイズ（プリセット）">` +
-          `<option value="fit"${sizeVal==='fit'?' selected':''}>幅に合わせる</option>` +
-          `<option value="s"${sizeVal==='s'?' selected':''}>小</option>` +
-          `<option value="m"${sizeVal==='m'?' selected':''}>中</option>` +
-          `<option value="l"${sizeVal==='l'?' selected':''}>大</option>` +
-          `<option value="custom" hidden${!isPreset?' selected':''}>カスタム</option>` +
+        `<select class="body-img__size" title="画像の表示幅を選択（端をドラッグすると自由なサイズにもできます）">` +
+          `<option value="fit"${sizeVal==='fit'?' selected':''}>幅に合わせる（エリア幅に自動追従）</option>` +
+          `<option value="s"${sizeVal==='s'?' selected':''}>小（120px）</option>` +
+          `<option value="m"${sizeVal==='m'?' selected':''}>中（240px）</option>` +
+          `<option value="l"${sizeVal==='l'?' selected':''}>大（最大幅）</option>` +
+          `<option value="custom" hidden${!isPreset?' selected':''}>${esc(customLabel)}</option>` +
         `</select>` +
         `<button class="body-img__del" title="削除"><i class="fa-solid fa-xmark"></i></button>` +
       `</span>`;
@@ -887,9 +894,14 @@ function startImageResize(wrap, startEvent) {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     wrap.classList.remove('resizing');
-    wrap.dataset.size = String(Math.round(imgEl.getBoundingClientRect().width));
+    const finalPx = Math.round(imgEl.getBoundingClientRect().width);
+    wrap.dataset.size = String(finalPx);
     const sel = wrap.querySelector('.body-img__size');
-    if (sel) sel.value = 'custom';
+    if (sel) {
+      const customOpt = sel.querySelector('option[value="custom"]');
+      if (customOpt) customOpt.textContent = customSizeLabel(finalPx);
+      sel.value = 'custom';
+    }
     markDirty(); renderCharCount(); rebuildLineMarksDebounced();
   };
   window.addEventListener('mousemove', onMove);
@@ -1972,7 +1984,9 @@ function bindEvents() {
     if (hl) hl.remove();
   });
   document.addEventListener('selectionchange', updateCursorHighlight);
-  /* 画像コントロールのクリックでキャレットが動かないよう防止／サイズ変更の開始 */
+  /* 画像コントロールのクリックでキャレットが動かないよう防止／サイズ変更の開始
+     ただし <select> は mousedown の既定動作(ドロップダウンを開く)を止めてしまうと
+     クリックしても選択肢が開かなくなるため、ここでは対象から除外する */
   refs.bodyInput.addEventListener('mousedown', e => {
     const resizeHandle = e.target.closest('.body-img__resize');
     if (resizeHandle) {
@@ -1981,7 +1995,7 @@ function bindEvents() {
       if (wrap) startImageResize(wrap, e);
       return;
     }
-    if (e.target.closest('.body-img__ctrl')) e.preventDefault();
+    if (e.target.closest('.body-img__ctrl') && !e.target.closest('.body-img__size')) e.preventDefault();
   });
   refs.bodyInput.addEventListener('dblclick', e => {
     const wrap = e.target.closest('.body-img');

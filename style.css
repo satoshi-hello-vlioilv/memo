@@ -592,6 +592,8 @@ button:disabled{cursor:not-allowed;opacity:.45}
   border-radius:5px;
   color:#fff;font-size:11px;
   cursor:pointer;outline:none;
+  max-width:104px;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
 }
 .body-img__del{
   width:26px;height:26px;border-radius:5px;

@@ -637,6 +637,12 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .interim-bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .body-editable{
   position:relative;
+  /* z-index:auto のままだと独自のスタッキングコンテキストが作られず、
+     子要素の z-index:-1(current-line-hl 等)がページ全体のルートに対して
+     評価されてしまい、カードの背景ごと素通りして完全に不可視になる。
+     明示的な z-index でここにスタッキングコンテキストを作り、負の z-index を
+     この要素の内部だけに閉じ込める */
+  z-index:0;
   flex:1;width:100%;border:none;outline:none;background:none;
   padding:12px 20px 16px;
   font-size:15px;line-height:1.9;letter-spacing:.01em;
@@ -654,9 +660,9 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .current-line-hl{
   position:absolute;
   left:0;right:0;
-  background:var(--primary-soft);
-  opacity:.6;
-  border-radius:5px;
+  background:rgba(19,121,108,.1);       /* var(--primary) を低アルファで全幅の帯として敷く */
+  border-left:3px solid var(--primary); /* 帯だけでは背景によって視認しづらいため、必ず見える左バーを併用 */
+  border-radius:3px;
   pointer-events:none;user-select:none;
   z-index:-1;
 }

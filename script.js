@@ -117,6 +117,7 @@ function collectRefs() {
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime','btnShowMarks',
+    'btnBold','btnItalic','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
@@ -250,7 +251,11 @@ function sortField() {
   return state.groupByDate ? state.groupDateField : 'updatedAt';
 }
 const BODY_IMG_MARKER_RE = /\[img:\d+(?::[lcr])?(?::(?:[sml]|\d+|fit))?\]/g;
-const stripImgMarkers = text => String(text ?? '').replace(BODY_IMG_MARKER_RE, ' ').replace(/\s+/g, ' ').trim();
+const BODY_FMT_TAG_RE = /\[\/?(?:b|i|size(?:=\d{1,3})?|color(?:=#[0-9a-fA-F]{6})?|hl(?:=#[0-9a-fA-F]{6})?)\]/g;
+const stripMarkers = text => String(text ?? '')
+  .replace(BODY_IMG_MARKER_RE, ' ')
+  .replace(BODY_FMT_TAG_RE, '')
+  .replace(/\s+/g, ' ').trim();
 function filteredMemos() {
   const q = state.query.trim().toLowerCase();
   const field = sortField();
@@ -263,14 +268,14 @@ function filteredMemos() {
       if (!q) return true;
       const inTitle = scope.title && (m.title || '').toLowerCase().includes(q);
       const inTags  = scope.tags  && (m.tags || []).some(t => t.toLowerCase().includes(q));
-      const inBody  = scope.body  && stripImgMarkers(m.body).toLowerCase().includes(q);
+      const inBody  = scope.body  && stripMarkers(m.body).toLowerCase().includes(q);
       return inTitle || inTags || inBody;
     })
     .sort((a, b) => (a[field] - b[field]) * dir);
 }
 /* 検索語がヒットした本文位置を中心に、前後を切り出してハイライトする（本文が検索対象外なら通常表示） */
 function makeSnippet(body, query, searchBody) {
-  const text = stripImgMarkers(body);
+  const text = stripMarkers(body);
   if (!text) return '';
   const q = query.trim();
   if (!q || !searchBody) return esc(text.slice(0, 64));
@@ -681,26 +686,82 @@ function addTextWithBreaks(parent, text) {
   }
 }
 
-function textToFragment(text) {
-  const frag = document.createDocumentFragment();
-  const re = /\[img:(\d+)(?::([lcr]))?(?::([sml]|\d+|fit))?\]/g;
-  let last = 0, m;
-  re.lastIndex = 0;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) addTextWithBreaks(frag, text.slice(last, m.index));
-    frag.appendChild(createInlineImg(Number(m[1]), m[2] || 'c', m[3] || 'fit'));
-    last = m.index + m[0].length;
+/* 書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex])に対応する要素を生成する。
+   size/color/hl はインライン style で表現し、シリアライズ時に判別できるよう
+   data-fmt 属性を付ける */
+function createFormatElement(tag, param) {
+  if (tag === 'b') return document.createElement('b');
+  if (tag === 'i') return document.createElement('i');
+  const span = document.createElement('span');
+  span.dataset.fmt = tag;
+  if (tag === 'size') {
+    const px = Math.min(72, Math.max(8, parseInt(param, 10) || 15));
+    span.style.fontSize = px + 'px';
+  } else if (tag === 'color' && /^#[0-9a-fA-F]{6}$/.test(param || '')) {
+    span.style.color = param;
+  } else if (tag === 'hl' && /^#[0-9a-fA-F]{6}$/.test(param || '')) {
+    span.style.backgroundColor = param;
   }
-  if (last < text.length) addTextWithBreaks(frag, text.slice(last));
-  return frag;
+  return span;
+}
+
+/* 画像マーカーと書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex])を含む本文
+   テキストを DOM フラグメントへ再帰的に変換する。書式タグは入れ子にできる
+   (例: [b][color=#ff0000]太字の赤文字[/color][/b])ため、単純な正規表現の
+   一括置換ではなく再帰下降パーサーとして実装している */
+const BODY_TOKEN_RE = /\[img:(?<imgId>\d+)(?::(?<imgAlign>[lcr]))?(?::(?<imgSize>[sml]|\d+|fit))?\]|\[(?<close>\/)?(?<tag>b|i|size|color|hl)(?:=(?<param>[^\]]*))?\]/g;
+function textToFragment(text) {
+  BODY_TOKEN_RE.lastIndex = 0;
+  function parse(stopTag) {
+    const frag = document.createDocumentFragment();
+    let textStart = BODY_TOKEN_RE.lastIndex;
+    let m;
+    while ((m = BODY_TOKEN_RE.exec(text)) !== null) {
+      if (m.index > textStart) addTextWithBreaks(frag, text.slice(textStart, m.index));
+      const g = m.groups;
+      if (g.imgId !== undefined) {
+        frag.appendChild(createInlineImg(Number(g.imgId), g.imgAlign || 'c', g.imgSize || 'fit'));
+        textStart = BODY_TOKEN_RE.lastIndex;
+        continue;
+      }
+      if (g.close) {
+        textStart = BODY_TOKEN_RE.lastIndex;
+        if (g.tag === stopTag) return frag;
+        continue; /* 対応する開始タグの無い閉じタグは読み飛ばす(壊れたデータへの耐性) */
+      }
+      const innerFrag = parse(g.tag);
+      const el = createFormatElement(g.tag, g.param);
+      el.appendChild(innerFrag);
+      frag.appendChild(el);
+      textStart = BODY_TOKEN_RE.lastIndex;
+    }
+    if (textStart < text.length) addTextWithBreaks(frag, text.slice(textStart));
+    return frag;
+  }
+  return parse(null);
+}
+
+/* rgb(r, g, b) / rgba(r, g, b, a) 形式の computed style 値を #rrggbb に変換する。
+   要素の style.color 等はブラウザ側で常に rgb() 表記に正規化されて返る */
+function rgbToHex(rgbStr) {
+  const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(rgbStr || '');
+  if (!m) return null;
+  const toHex = n => Number(n).toString(16).padStart(2, '0');
+  return '#' + toHex(m[1]) + toHex(m[2]) + toHex(m[3]);
 }
 
 function serializeBody() {
   let result = '';
+  function wrapTag(node, open, close) {
+    result += open;
+    for (const c of node.childNodes) walk(c);
+    result += close;
+  }
   function walk(node) {
     if (node.nodeType === Node.TEXT_NODE) {
       result += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const fmt = node.dataset && node.dataset.fmt;
       if (node.classList && (node.classList.contains('line-mark') || node.classList.contains('current-line-hl'))) {
         return; /* 表示専用のオーバーレイ要素(改行マーク・現在行ハイライト)は読み飛ばす */
       } else if (node.classList && node.classList.contains('body-img')) {
@@ -711,6 +772,21 @@ function serializeBody() {
         if (result.length > 0 && !result.endsWith('\n')) result += '\n';
         for (const c of node.childNodes) walk(c);
         if (!result.endsWith('\n')) result += '\n';
+      } else if (node.tagName === 'B' || node.tagName === 'STRONG') {
+        wrapTag(node, '[b]', '[/b]');
+      } else if (node.tagName === 'I' || node.tagName === 'EM') {
+        wrapTag(node, '[i]', '[/i]');
+      } else if (fmt === 'size') {
+        const px = parseInt(node.style.fontSize, 10) || 15;
+        wrapTag(node, `[size=${px}]`, '[/size]');
+      } else if (fmt === 'color') {
+        const hex = rgbToHex(node.style.color);
+        if (hex) wrapTag(node, `[color=${hex}]`, '[/color]');
+        else for (const c of node.childNodes) walk(c);
+      } else if (fmt === 'hl') {
+        const hex = rgbToHex(node.style.backgroundColor);
+        if (hex) wrapTag(node, `[hl=${hex}]`, '[/hl]');
+        else for (const c of node.childNodes) walk(c);
       } else {
         for (const c of node.childNodes) walk(c);
       }
@@ -1053,6 +1129,165 @@ function replaceSelection(newText) {
   sel.removeAllRanges();
   sel.addRange(nr);
   markDirty(); renderCharCount();
+}
+
+/* ============================================================
+   本文の書式設定（太字・斜体・文字サイズ・文字色・ハイライト）
+   ============================================================ */
+/* ツールバーのボタン/セレクト/カラーピッカーをクリックすると本文の選択範囲
+   (window.getSelection())が失われることがあるため、操作の直前に退避し、
+   実際に書式を適用する瞬間に復元する */
+let savedBodyRange = null;
+function captureBodySelection() {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0) {
+    const r = sel.getRangeAt(0);
+    if (refs.bodyInput.contains(r.commonAncestorContainer) && !r.collapsed) {
+      savedBodyRange = r.cloneRange();
+      return true;
+    }
+  }
+  return false;
+}
+function restoreBodySelection() {
+  if (!savedBodyRange) return false;
+  refs.bodyInput.focus();
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  try { sel.addRange(savedBodyRange); } catch { return false; }
+  return true;
+}
+
+/* range と交差するテキストノードを出現順に列挙する */
+function getSelectedTextNodesInRange(range) {
+  const root = range.commonAncestorContainer;
+  const container = root.nodeType === Node.TEXT_NODE ? root.parentNode : root;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode: node => range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+  });
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  return nodes;
+}
+function firstTextNode(el) {
+  if (el.nodeType === Node.TEXT_NODE) return el;
+  for (const child of el.childNodes) {
+    const found = firstTextNode(child);
+    if (found) return found;
+  }
+  return null;
+}
+function lastTextNode(el) {
+  if (el.nodeType === Node.TEXT_NODE) return el;
+  for (let i = el.childNodes.length - 1; i >= 0; i--) {
+    const found = lastTextNode(el.childNodes[i]);
+    if (found) return found;
+  }
+  return null;
+}
+
+/* 選択範囲に含まれる各テキストノードを個別に makeEl() の要素で包む。
+   単一の要素で選択範囲全体を包もうとすると(Range.surroundContents)、
+   複数行(複数の <div>)にまたがる選択で例外になるため、テキストノード単位で
+   処理することで行構造を壊さずに書式を適用できるようにしている */
+function applyInlineFormat(makeEl) {
+  if (!restoreBodySelection()) { toast('書式を適用するテキストを選択してください', 'info'); return; }
+  const sel = window.getSelection();
+  const range = sel.getRangeAt(0);
+  const textNodes = getSelectedTextNodesInRange(range);
+  if (textNodes.length === 0) { toast('書式を適用するテキストを選択してください', 'info'); return; }
+  /* extractContents/insertNode で先に処理したノードが Range の境界を
+     書き換えてしまう(DOM の仕様上の自動調整)前に、境界点を固定値として控えておく */
+  const startContainer = range.startContainer, startOffset = range.startOffset;
+  const endContainer = range.endContainer, endOffset = range.endOffset;
+  const wrapped = [];
+  for (const node of textNodes) {
+    const nodeRange = document.createRange();
+    nodeRange.selectNodeContents(node);
+    if (node === startContainer) nodeRange.setStart(node, startOffset);
+    if (node === endContainer) nodeRange.setEnd(node, endOffset);
+    if (nodeRange.collapsed) continue;
+    const extracted = nodeRange.extractContents();
+    const el = makeEl();
+    el.appendChild(extracted);
+    nodeRange.insertNode(el);
+    wrapped.push(el);
+  }
+  if (wrapped.length === 0) return;
+  /* 選択の境界は実テキストノード基準にする。setStartBefore/setEndAfter の
+     ような要素基準の境界は、折りたたんだ Range の getClientRects() が
+     空配列を返すことがあり(文字境界でない collapsed Range の既知の癖)、
+     カーソルハイライト側のフォールバックが要素全体の矩形を拾って
+     異常に大きな帯が表示される不具合につながる */
+  const newRange = document.createRange();
+  const startText = firstTextNode(wrapped[0]);
+  const endText = lastTextNode(wrapped[wrapped.length - 1]);
+  if (startText && endText) {
+    newRange.setStart(startText, 0);
+    newRange.setEnd(endText, endText.textContent.length);
+  } else {
+    newRange.setStartBefore(wrapped[0]);
+    newRange.setEndAfter(wrapped[wrapped.length - 1]);
+  }
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+  savedBodyRange = newRange.cloneRange();
+  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+}
+
+/* 選択範囲に関わる書式要素を丸ごとアンラップする。要素の一部だけが選択されて
+   いる場合も、その要素全体の書式を解除する(文字単位の精密な分割は行わない
+   簡易な実装)。壊れた選択状態を残さないよう normalize() で隣接テキスト
+   ノードを統合しておく */
+function clearInlineFormat() {
+  if (!restoreBodySelection()) { toast('書式を解除するテキストを選択してください', 'info'); return; }
+  const sel = window.getSelection();
+  const range = sel.getRangeAt(0);
+  const textNodes = getSelectedTextNodesInRange(range);
+  const touched = new Set();
+  for (const node of textNodes) {
+    let el = node.parentElement;
+    while (el && el !== refs.bodyInput) {
+      const isFmt = el.tagName === 'B' || el.tagName === 'STRONG' || el.tagName === 'I' || el.tagName === 'EM' || (el.dataset && el.dataset.fmt);
+      if (isFmt) touched.add(el);
+      el = el.parentElement;
+    }
+  }
+  if (touched.size === 0) { toast('選択範囲に書式は設定されていません', 'info'); return; }
+  for (const el of touched) {
+    const parent = el.parentNode;
+    if (!parent) continue;
+    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+  }
+  refs.bodyInput.normalize();
+  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+}
+
+/* 書式ツールバーの有効/無効・太字イタリックのアクティブ表示を、現在の
+   選択状態に合わせて更新する */
+function updateFormatToolbarState() {
+  /* ボタンを disabled にして選択の有無でクリック可否を切り替える設計も検討したが、
+     select/color ピッカーを開く操作中に selectionchange が挟まると、
+     mousedown と click の間でボタンが disabled になり click 自体が
+     発火しなくなる競合が起こり得るため採用しない。選択が無い状態での
+     クリックは各アクション側で trap し、トーストで案内する */
+  const sel = window.getSelection();
+  const focused = document.activeElement === refs.bodyInput && sel && sel.rangeCount > 0 &&
+    refs.bodyInput.contains(sel.getRangeAt(0).commonAncestorContainer);
+  let inBold = false, inItalic = false;
+  if (focused) {
+    const node = sel.anchorNode;
+    let el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
+    while (el && el !== refs.bodyInput) {
+      if (el.tagName === 'B' || el.tagName === 'STRONG') inBold = true;
+      if (el.tagName === 'I' || el.tagName === 'EM') inItalic = true;
+      el = el.parentElement;
+    }
+  }
+  refs.btnBold.classList.toggle('active', inBold);
+  refs.btnItalic.classList.toggle('active', inItalic);
 }
 
 function buildCtxMenu(hasSel) {
@@ -1978,12 +2213,12 @@ function bindEvents() {
     updateCursorHighlight();
   }, { passive: true });
   /* カーソル位置ハイライト: フォーカス中は選択範囲の変化を全て追従させる */
-  refs.bodyInput.addEventListener('focus', updateCursorHighlight);
+  refs.bodyInput.addEventListener('focus', () => { updateCursorHighlight(); updateFormatToolbarState(); });
   refs.bodyInput.addEventListener('blur', () => {
     const hl = refs.bodyInput.querySelector('.current-line-hl');
     if (hl) hl.remove();
   });
-  document.addEventListener('selectionchange', updateCursorHighlight);
+  document.addEventListener('selectionchange', () => { updateCursorHighlight(); updateFormatToolbarState(); });
   /* 画像コントロールのクリックでキャレットが動かないよう防止／サイズ変更の開始
      ただし <select> は mousedown の既定動作(ドロップダウンを開く)を止めてしまうと
      クリックしても選択肢が開かなくなるため、ここでは対象から除外する */
@@ -2126,6 +2361,31 @@ function bindEvents() {
     savePref('showLineMarks', state.showLineMarks);
     rebuildLineMarks();
   });
+
+  /* --- 書式設定(太字・斜体・文字サイズ・文字色・ハイライト) ---
+     select/color 系コントロールはクリックした瞬間に本文のフォーカス・選択が
+     失われるため、開く前(mousedown)に選択範囲を退避しておく */
+  refs.btnBold.addEventListener('mousedown', captureBodySelection);
+  refs.btnBold.addEventListener('click', () => applyInlineFormat(() => document.createElement('b')));
+  refs.btnItalic.addEventListener('mousedown', captureBodySelection);
+  refs.btnItalic.addEventListener('click', () => applyInlineFormat(() => document.createElement('i')));
+  refs.fontSizeSelect.addEventListener('mousedown', captureBodySelection);
+  refs.fontSizeSelect.addEventListener('change', () => {
+    const px = refs.fontSizeSelect.value;
+    refs.fontSizeSelect.value = '';
+    if (!px) return;
+    applyInlineFormat(() => createFormatElement('size', px));
+  });
+  refs.textColorInput.addEventListener('mousedown', captureBodySelection);
+  refs.textColorInput.addEventListener('change', () => {
+    applyInlineFormat(() => createFormatElement('color', refs.textColorInput.value));
+  });
+  refs.highlightColorInput.addEventListener('mousedown', captureBodySelection);
+  refs.highlightColorInput.addEventListener('change', () => {
+    applyInlineFormat(() => createFormatElement('hl', refs.highlightColorInput.value));
+  });
+  refs.btnClearFormat.addEventListener('mousedown', captureBodySelection);
+  refs.btnClearFormat.addEventListener('click', clearInlineFormat);
 
   /* --- 画像 --- */
   refs.btnAddImage.addEventListener('click', () => refs.fileInput.click());

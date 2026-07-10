@@ -708,34 +708,66 @@ function createFormatElement(tag, param) {
 /* 画像マーカーと書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex])を含む本文
    テキストを DOM フラグメントへ再帰的に変換する。書式タグは入れ子にできる
    (例: [b][color=#ff0000]太字の赤文字[/color][/b])ため、単純な正規表現の
-   一括置換ではなく再帰下降パーサーとして実装している */
+   一括置換ではなく再帰下降パーサーとして実装している。
+
+   【重要】走査位置は pos 変数で明示的に管理する。以前は g フラグ正規表現の
+   lastIndex を再帰をまたいで共有していたが、JS の仕様では exec が失敗すると
+   lastIndex が 0 にリセットされるため、閉じタグの無い開始タグ(ユーザーが
+   文字通り「[b]」と入力した場合など)で呼び出し元が先頭から再走査してしまい、
+   無限ループでアプリ全体がフリーズする致命的な不具合があった。 */
 const BODY_TOKEN_RE = /\[img:(?<imgId>\d+)(?::(?<imgAlign>[lcr]))?(?::(?<imgSize>[sml]|\d+|fit))?\]|\[(?<close>\/)?(?<tag>b|i|size|color|hl)(?:=(?<param>[^\]]*))?\]/g;
+const BODY_FMT_TAGS = ['b', 'i', 'size', 'color', 'hl'];
 function textToFragment(text) {
-  BODY_TOKEN_RE.lastIndex = 0;
+  let pos = 0;
+  /* 各タグの閉じタグ位置を先に列挙しておく。開始タグごとに indexOf で後方を
+     線形探索すると、対応の取れないタグが大量に並ぶ入力で二次時間になるため、
+     単調に進む pos に合わせてポインタを進めるだけで判定できるようにする */
+  const closeIdx = {};
+  for (const t of BODY_FMT_TAGS) {
+    const list = [];
+    const needle = `[/${t}]`;
+    for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) list.push(at);
+    closeIdx[t] = { list, next: 0 };
+  }
+  const hasCloseAhead = tag => {
+    const c = closeIdx[tag];
+    while (c.next < c.list.length && c.list[c.next] < pos) c.next++;
+    return c.next < c.list.length;
+  };
   function parse(stopTag) {
     const frag = document.createDocumentFragment();
-    let textStart = BODY_TOKEN_RE.lastIndex;
-    let m;
-    while ((m = BODY_TOKEN_RE.exec(text)) !== null) {
-      if (m.index > textStart) addTextWithBreaks(frag, text.slice(textStart, m.index));
+    while (pos < text.length) {
+      BODY_TOKEN_RE.lastIndex = pos;
+      const m = BODY_TOKEN_RE.exec(text);
+      if (!m) break;
+      if (m.index > pos) addTextWithBreaks(frag, text.slice(pos, m.index));
+      pos = m.index + m[0].length;
       const g = m.groups;
       if (g.imgId !== undefined) {
         frag.appendChild(createInlineImg(Number(g.imgId), g.imgAlign || 'c', g.imgSize || 'fit'));
-        textStart = BODY_TOKEN_RE.lastIndex;
         continue;
       }
       if (g.close) {
-        textStart = BODY_TOKEN_RE.lastIndex;
         if (g.tag === stopTag) return frag;
-        continue; /* 対応する開始タグの無い閉じタグは読み飛ばす(壊れたデータへの耐性) */
+        /* 対応する開始タグの無い閉じタグは、書式として解釈せず文字のまま表示する */
+        addTextWithBreaks(frag, m[0]);
+        continue;
       }
-      const innerFrag = parse(g.tag);
+      /* 対応する閉じタグが後方に無い開始タグも文字のまま表示する。ユーザーが
+         文字通り「[b]」等と入力したケースで、以降全文が意図せず書式化されたり
+         入力した文字が消えたりしないようにする */
+      if (!hasCloseAhead(g.tag)) {
+        addTextWithBreaks(frag, m[0]);
+        continue;
+      }
       const el = createFormatElement(g.tag, g.param);
-      el.appendChild(innerFrag);
+      el.appendChild(parse(g.tag));
       frag.appendChild(el);
-      textStart = BODY_TOKEN_RE.lastIndex;
     }
-    if (textStart < text.length) addTextWithBreaks(frag, text.slice(textStart));
+    if (pos < text.length) {
+      addTextWithBreaks(frag, text.slice(pos));
+      pos = text.length;
+    }
     return frag;
   }
   return parse(null);
@@ -799,7 +831,18 @@ function serializeBody() {
 function deserializeBody(text) {
   refs.bodyInput.innerHTML = '';
   if (text) {
-    refs.bodyInput.appendChild(textToFragment(text));
+    let frag;
+    try {
+      frag = textToFragment(text);
+    } catch (err) {
+      /* 起動時の前回メモ復元でも呼ばれるため、パーサーがどんな入力
+         (インポートされた異常データ等)で失敗してもアプリ全体が起動不能に
+         ならないよう、プレーンテキスト表示にフォールバックする */
+      console.error('本文の解釈に失敗したためプレーンテキストとして表示します', err);
+      frag = document.createDocumentFragment();
+      addTextWithBreaks(frag, text);
+    }
+    refs.bodyInput.appendChild(frag);
     ensureTrailingEditable();
   }
   rebuildLineMarks();
@@ -1147,6 +1190,9 @@ function captureBodySelection() {
       return true;
     }
   }
+  /* 現時点で有効な選択が無ければ退避値も破棄する。古い値を残すと、選択を
+     解除した後のツールバー操作で「以前の選択範囲」に書式が再適用されてしまう */
+  savedBodyRange = null;
   return false;
 }
 function restoreBodySelection() {
@@ -1158,12 +1204,21 @@ function restoreBodySelection() {
   return true;
 }
 
-/* range と交差するテキストノードを出現順に列挙する */
+/* range と交差する、書式適用対象のテキストノードを出現順に列挙する。
+   選択範囲がインライン画像や表示専用オーバーレイをまたぐ場合(全選択など)、
+   intersectsNode はそれらの内部テキスト(画像コントロールの <option> ラベルや
+   改行マークの「↵」)にも true を返すため、明示的に除外する。除外しないと
+   <option> の中に <b> が挿入されるなどウィジェットのDOMが破壊される */
 function getSelectedTextNodesInRange(range) {
   const root = range.commonAncestorContainer;
   const container = root.nodeType === Node.TEXT_NODE ? root.parentNode : root;
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    acceptNode: node => {
+      if (!range.intersectsNode(node)) return NodeFilter.FILTER_REJECT;
+      const p = node.parentElement;
+      if (p && p.closest('.body-img, .line-mark, .current-line-hl')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
   });
   const nodes = [];
   let n;

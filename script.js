@@ -1,6 +1,9 @@
 (() => {
 'use strict';
 
+/* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
+const APP_VERSION = '1.0.0';
+
 /* ============================================================
    ユーティリティ
    ============================================================ */
@@ -111,7 +114,7 @@ const state = {
 const refs = {};
 function collectRefs() {
   const ids = [
-    'app','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
+    'app','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
     'searchInput','searchClear','searchScope','searchSuggest','tagBar','listCount','btnImageFilter','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
@@ -2565,6 +2568,8 @@ function bindEvents() {
    ============================================================ */
 async function init() {
   collectRefs();
+  refs.brandVersion.textContent = 'v' + APP_VERSION;
+  refs.brandVersion.title = `バージョン ${APP_VERSION}`;
   if (!window.indexedDB) { refs.fatal.hidden = false; return; }
   try {
     db = await openDB();

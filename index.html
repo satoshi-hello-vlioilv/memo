@@ -111,44 +111,42 @@
 
       <div class="toolbar">
         <div class="tool-group">
-          <select id="formatSelect" class="fmt-select">
-            <option value="">フォーマットを選択</option>
-          </select>
-          <button id="btnApplyFormat" class="btn btn-soft" title="選択したフォーマットをカーソル位置に挿入"><i class="fa-solid fa-stamp"></i> 適用</button>
-        </div>
-        <div class="tool-group">
-          <span id="recIndicator" class="rec-indicator" hidden="">
-            <span class="rec-dot"></span>REC <span id="recTime" class="mono">0:00</span>
-          </span>
-          <button id="btnMic" class="btn btn-soft" title="本文へ音声で直接入力します"><i class="fa-solid fa-microphone"></i> 音声入力</button>
-          <button id="btnShowMarks" class="icon-btn" title="改行マークの表示切替"><i class="fa-solid fa-paragraph"></i></button>
-        </div>
-      </div>
-
-      <div class="toolbar fmt-toolbar">
-        <div class="tool-group">
           <button id="btnBold" class="icon-btn" title="太字"><i class="fa-solid fa-bold"></i></button>
           <button id="btnItalic" class="icon-btn" title="斜体"><i class="fa-solid fa-italic"></i></button>
-          <span class="tool-div"></span>
           <select id="fontSizeSelect" class="fmt-select fmt-select--sm" title="文字サイズ">
             <option value="">サイズ</option>
+            <option value="reset">サイズ解除</option>
             <option value="12">小(12px)</option>
             <option value="15">標準(15px)</option>
             <option value="19">大(19px)</option>
             <option value="24">特大(24px)</option>
             <option value="32">最大(32px)</option>
           </select>
-          <span class="tool-div"></span>
-          <label class="color-tool" title="文字色">
+          <span class="color-tool" title="文字色">
             <i class="fa-solid fa-font"></i>
             <input type="color" id="textColorInput" value="#243038">
-          </label>
-          <label class="color-tool" title="ハイライト">
+            <button type="button" class="color-reset" id="btnClearTextColor" title="文字色を解除"><i class="fa-solid fa-xmark"></i></button>
+          </span>
+          <span class="color-tool" title="ハイライト">
             <i class="fa-solid fa-highlighter"></i>
             <input type="color" id="highlightColorInput" value="#fff59d">
-          </label>
-          <span class="tool-div"></span>
-          <button id="btnClearFormat" class="icon-btn" title="選択範囲の書式をクリア"><i class="fa-solid fa-text-slash"></i></button>
+            <button type="button" class="color-reset" id="btnClearHighlight" title="ハイライトを解除"><i class="fa-solid fa-xmark"></i></button>
+          </span>
+          <button id="btnClearFormat" class="icon-btn" title="選択範囲の書式をすべてクリア"><i class="fa-solid fa-text-slash"></i></button>
+        </div>
+        <span class="tool-div"></span>
+        <div class="tool-group">
+          <select id="formatSelect" class="fmt-select fmt-select--tpl">
+            <option value="">フォーマットを選択</option>
+          </select>
+          <button id="btnApplyFormat" class="icon-btn" title="選択したフォーマットをカーソル位置に挿入"><i class="fa-solid fa-stamp"></i></button>
+        </div>
+        <div class="tool-group toolbar-end">
+          <span id="recIndicator" class="rec-indicator" hidden="">
+            <span class="rec-dot"></span>REC <span id="recTime" class="mono">0:00</span>
+          </span>
+          <button id="btnMic" class="btn btn-soft" title="本文へ音声で直接入力します"><i class="fa-solid fa-microphone"></i> 音声入力</button>
+          <button id="btnShowMarks" class="icon-btn" title="改行マークの表示切替"><i class="fa-solid fa-paragraph"></i></button>
         </div>
       </div>
 

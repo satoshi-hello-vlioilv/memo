@@ -121,6 +121,7 @@ function collectRefs() {
     'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime','btnShowMarks',
     'btnBold','btnItalic','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
+    'btnClearTextColor','btnClearHighlight',
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
@@ -1245,11 +1246,27 @@ function lastTextNode(el) {
   return null;
 }
 
+/* 要素をアンラップする(自身を取り除き、子だけを親の位置に残す) */
+function unwrapElement(el) {
+  const parent = el.parentNode;
+  if (!parent) return;
+  while (el.firstChild) parent.insertBefore(el.firstChild, el);
+  parent.removeChild(el);
+}
+const isAnyFormatEl = el => el.tagName === 'B' || el.tagName === 'STRONG' || el.tagName === 'I' || el.tagName === 'EM' || (el.dataset && el.dataset.fmt);
+
 /* 選択範囲に含まれる各テキストノードを個別に makeEl() の要素で包む。
    単一の要素で選択範囲全体を包もうとすると(Range.surroundContents)、
    複数行(複数の <div>)にまたがる選択で例外になるため、テキストノード単位で
-   処理することで行構造を壊さずに書式を適用できるようにしている */
-function applyInlineFormat(makeEl) {
+   処理することで行構造を壊さずに書式を適用できるようにしている。
+
+   fmtType を渡した場合(文字サイズ・文字色・ハイライトのような「値を持つ」
+   書式)、選択がちょうどノード全体かつ既に同種の書式でだけ包まれているときは
+   入れ子にせずその場で値を差し替える。単純に入れ子で重ねると、視覚的には
+   新しい値で上書きされていても外側の古いラッパー(例: 大きいフォントサイズ)が
+   行の高さなどに影響し続けたまま残ってしまい、値を戻しても見た目が戻らない
+   不具合になる */
+function applyInlineFormat(makeEl, fmtType) {
   if (!restoreBodySelection()) { toast('書式を適用するテキストを選択してください', 'info'); return; }
   const sel = window.getSelection();
   const range = sel.getRangeAt(0);
@@ -1266,6 +1283,17 @@ function applyInlineFormat(makeEl) {
     if (node === startContainer) nodeRange.setStart(node, startOffset);
     if (node === endContainer) nodeRange.setEnd(node, endOffset);
     if (nodeRange.collapsed) continue;
+    const parent = node.parentElement;
+    const wholeNodeSelected = nodeRange.startOffset === 0 && nodeRange.endOffset === node.textContent.length;
+    if (fmtType && wholeNodeSelected && parent && parent.dataset && parent.dataset.fmt === fmtType &&
+        parent.childNodes.length === 1 && parent.firstChild === node) {
+      const fresh = makeEl();
+      if (fmtType === 'size') parent.style.fontSize = fresh.style.fontSize;
+      else if (fmtType === 'color') parent.style.color = fresh.style.color;
+      else if (fmtType === 'hl') parent.style.backgroundColor = fresh.style.backgroundColor;
+      wrapped.push(parent);
+      continue;
+    }
     const extracted = nodeRange.extractContents();
     const el = makeEl();
     el.appendChild(extracted);
@@ -1294,11 +1322,75 @@ function applyInlineFormat(makeEl) {
   markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
 }
 
-/* 選択範囲に関わる書式要素を丸ごとアンラップする。要素の一部だけが選択されて
-   いる場合も、その要素全体の書式を解除する(文字単位の精密な分割は行わない
-   簡易な実装)。壊れた選択状態を残さないよう normalize() で隣接テキスト
-   ノードを統合しておく */
-function clearInlineFormat() {
+/* 太字・斜体用のトグル。選択範囲が(部分的にでも)未適用のテキストを含んでいれば
+   全体に適用し、選択範囲がすでに全て適用済みなら解除する。既に適用済みの部分は
+   二重に包まない(入れ子の蓄積を防ぐ) */
+function toggleTagFormat(matchTag, makeEl) {
+  if (!restoreBodySelection()) { toast('書式を適用するテキストを選択してください', 'info'); return; }
+  const sel = window.getSelection();
+  const range = sel.getRangeAt(0);
+  const textNodes = getSelectedTextNodesInRange(range);
+  if (textNodes.length === 0) { toast('書式を適用するテキストを選択してください', 'info'); return; }
+  const hasAncestor = node => {
+    let el = node.parentElement;
+    while (el && el !== refs.bodyInput) {
+      if (matchTag(el)) return true;
+      el = el.parentElement;
+    }
+    return false;
+  };
+  if (textNodes.every(hasAncestor)) {
+    const touched = new Set();
+    for (const node of textNodes) {
+      let el = node.parentElement;
+      while (el && el !== refs.bodyInput) {
+        if (matchTag(el)) touched.add(el);
+        el = el.parentElement;
+      }
+    }
+    for (const el of touched) unwrapElement(el);
+    refs.bodyInput.normalize();
+    markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+    return;
+  }
+  const startContainer = range.startContainer, startOffset = range.startOffset;
+  const endContainer = range.endContainer, endOffset = range.endOffset;
+  const wrapped = [];
+  for (const node of textNodes) {
+    const nodeRange = document.createRange();
+    nodeRange.selectNodeContents(node);
+    if (node === startContainer) nodeRange.setStart(node, startOffset);
+    if (node === endContainer) nodeRange.setEnd(node, endOffset);
+    if (nodeRange.collapsed) continue;
+    if (hasAncestor(node)) { wrapped.push(node); continue; }
+    const extracted = nodeRange.extractContents();
+    const el = makeEl();
+    el.appendChild(extracted);
+    nodeRange.insertNode(el);
+    wrapped.push(el);
+  }
+  if (wrapped.length === 0) return;
+  const newRange = document.createRange();
+  const startText = firstTextNode(wrapped[0]);
+  const endText = lastTextNode(wrapped[wrapped.length - 1]);
+  if (startText && endText) {
+    newRange.setStart(startText, 0);
+    newRange.setEnd(endText, endText.textContent.length);
+  } else {
+    newRange.setStartBefore(wrapped[0]);
+    newRange.setEndAfter(wrapped[wrapped.length - 1]);
+  }
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+  savedBodyRange = newRange.cloneRange();
+  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+}
+
+/* 選択範囲に関わる、predicate に一致する書式要素を丸ごとアンラップする。要素の
+   一部だけが選択されている場合も、その要素全体の書式を解除する(文字単位の
+   精密な分割は行わない簡易な実装)。壊れた選択状態を残さないよう normalize() で
+   隣接テキストノードを統合しておく */
+function clearFormatMatching(predicate, emptyMessage) {
   if (!restoreBodySelection()) { toast('書式を解除するテキストを選択してください', 'info'); return; }
   const sel = window.getSelection();
   const range = sel.getRangeAt(0);
@@ -1307,20 +1399,20 @@ function clearInlineFormat() {
   for (const node of textNodes) {
     let el = node.parentElement;
     while (el && el !== refs.bodyInput) {
-      const isFmt = el.tagName === 'B' || el.tagName === 'STRONG' || el.tagName === 'I' || el.tagName === 'EM' || (el.dataset && el.dataset.fmt);
-      if (isFmt) touched.add(el);
+      if (predicate(el)) touched.add(el);
       el = el.parentElement;
     }
   }
-  if (touched.size === 0) { toast('選択範囲に書式は設定されていません', 'info'); return; }
-  for (const el of touched) {
-    const parent = el.parentNode;
-    if (!parent) continue;
-    while (el.firstChild) parent.insertBefore(el.firstChild, el);
-    parent.removeChild(el);
-  }
+  if (touched.size === 0) { toast(emptyMessage, 'info'); return; }
+  for (const el of touched) unwrapElement(el);
   refs.bodyInput.normalize();
   markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+}
+function clearInlineFormat() {
+  clearFormatMatching(isAnyFormatEl, '選択範囲に書式は設定されていません');
+}
+function clearFormatType(fmtType, emptyMessage) {
+  clearFormatMatching(el => el.dataset && el.dataset.fmt === fmtType, emptyMessage);
 }
 
 /* 書式ツールバーの有効/無効・太字イタリックのアクティブ表示を、現在の
@@ -2424,24 +2516,31 @@ function bindEvents() {
      select/color 系コントロールはクリックした瞬間に本文のフォーカス・選択が
      失われるため、開く前(mousedown)に選択範囲を退避しておく */
   refs.btnBold.addEventListener('mousedown', captureBodySelection);
-  refs.btnBold.addEventListener('click', () => applyInlineFormat(() => document.createElement('b')));
+  refs.btnBold.addEventListener('click', () => toggleTagFormat(
+    el => el.tagName === 'B' || el.tagName === 'STRONG', () => document.createElement('b')));
   refs.btnItalic.addEventListener('mousedown', captureBodySelection);
-  refs.btnItalic.addEventListener('click', () => applyInlineFormat(() => document.createElement('i')));
+  refs.btnItalic.addEventListener('click', () => toggleTagFormat(
+    el => el.tagName === 'I' || el.tagName === 'EM', () => document.createElement('i')));
   refs.fontSizeSelect.addEventListener('mousedown', captureBodySelection);
   refs.fontSizeSelect.addEventListener('change', () => {
-    const px = refs.fontSizeSelect.value;
+    const val = refs.fontSizeSelect.value;
     refs.fontSizeSelect.value = '';
-    if (!px) return;
-    applyInlineFormat(() => createFormatElement('size', px));
+    if (!val) return;
+    if (val === 'reset') { clearFormatType('size', '選択範囲に文字サイズは設定されていません'); return; }
+    applyInlineFormat(() => createFormatElement('size', val), 'size');
   });
   refs.textColorInput.addEventListener('mousedown', captureBodySelection);
   refs.textColorInput.addEventListener('change', () => {
-    applyInlineFormat(() => createFormatElement('color', refs.textColorInput.value));
+    applyInlineFormat(() => createFormatElement('color', refs.textColorInput.value), 'color');
   });
+  refs.btnClearTextColor.addEventListener('mousedown', captureBodySelection);
+  refs.btnClearTextColor.addEventListener('click', () => clearFormatType('color', '選択範囲に文字色は設定されていません'));
   refs.highlightColorInput.addEventListener('mousedown', captureBodySelection);
   refs.highlightColorInput.addEventListener('change', () => {
-    applyInlineFormat(() => createFormatElement('hl', refs.highlightColorInput.value));
+    applyInlineFormat(() => createFormatElement('hl', refs.highlightColorInput.value), 'hl');
   });
+  refs.btnClearHighlight.addEventListener('mousedown', captureBodySelection);
+  refs.btnClearHighlight.addEventListener('click', () => clearFormatType('hl', '選択範囲にハイライトは設定されていません'));
   refs.btnClearFormat.addEventListener('mousedown', captureBodySelection);
   refs.btnClearFormat.addEventListener('click', clearInlineFormat);
 

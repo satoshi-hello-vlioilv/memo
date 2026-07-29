@@ -1151,6 +1151,12 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   .sidebar { border-bottom: 1px solid var(--ink-line); }
   .imgpanel { border-top: 1px solid var(--line); display: flex !important; }
   #app.panel-closed .imgpanel { display: none !important; }
+  /* #app がスクロール可能な縦積みレイアウトになるため、.editor は他の
+     セクション(サイドバー・画像パネル)に押し潰されず、自身の内容の高さを
+     保つ必要がある。保たないと .editor の overflow:hidden(デスクトップ用)に
+     よって内容(保存ボタンを含む sheet-foot 等)が見えなくなり、かつ #app の
+     スクロールでも復帰できなくなる */
+  .editor { flex-shrink: 0; overflow: visible; }
   .editor-sheet { margin: 10px; width: calc(100% - 20px); flex: none; }
   .sheet-head, .toolbar, .sheet-foot { padding: 10px 15px; }
   .body-editable { padding: 15px; min-height: 300px; }

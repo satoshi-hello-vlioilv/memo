@@ -1105,6 +1105,24 @@ function rebuildLineMarks() {
      文字境界の collapsed Range は getClientRects() が空配列を返すことがあり
      getBoundingClientRect() が全て 0 になるため、要素自体の矩形を使う */
   for (const block of $$('div, p', refs.bodyInput)) addMark(block.getBoundingClientRect());
+  /* white-space:pre-wrap の本文では、Shift+Enter による改行が <br> ではなく
+     テキストノード内の "\n" 文字として挿入される場合がある。これを拾わないと
+     Shift+Enter の改行だけマークが表示されない */
+  const walker = document.createTreeWalker(refs.bodyInput, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => (n.parentElement && n.parentElement.closest('.line-mark, .current-line-hl'))
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  let tn;
+  while ((tn = walker.nextNode())) {
+    const s = tn.textContent;
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] !== '\n') continue;
+      const r = document.createRange();
+      r.setStart(tn, i);
+      r.setEnd(tn, i + 1);
+      addMark(r.getClientRects()[0]);
+    }
+  }
   refs.bodyInput.appendChild(frag);
 }
 const rebuildLineMarksDebounced = debounce(rebuildLineMarks, 200);
@@ -1127,11 +1145,25 @@ function updateCursorHighlight() {
   range.collapse(true);
   let rect = range.getClientRects()[0];
   if (!rect) {
-    /* 空行など、文字境界の collapsed Range が矩形を返さない場合は
-       キャレットを含む要素自体の矩形にフォールバックする */
     const node = range.startContainer;
-    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    rect = el && el.getBoundingClientRect();
+    /* white-space:pre-wrap の本文で Shift+Enter 等により改行がテキストノード内の
+       "\n" 文字として表現される場合、その文字境界の collapsed Range は
+       getClientRects() が空になることがある。その場合でもテキストノード全体を
+       選択した Range なら正しい行の矩形が取れるため、まずそちらを試す。
+       (これを飛ばして要素の矩形にフォールバックすると、"\n" がbodyInput 直下の
+       テキストノードの場合に親要素＝エディタ全体の矩形を拾ってしまい、
+       ハイライトがエディタ全体を覆う不具合になる) */
+    if (node.nodeType === Node.TEXT_NODE) {
+      const nodeRange = document.createRange();
+      nodeRange.selectNodeContents(node);
+      rect = nodeRange.getClientRects()[0];
+    }
+    if (!rect || rect.height === 0) {
+      /* それでも矩形が取れない場合(空要素など)は、キャレットを含む要素自体の
+         矩形にフォールバックする */
+      const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      rect = el && el.getBoundingClientRect();
+    }
   }
   if (!rect || rect.height === 0) { if (hl) hl.remove(); return; }
   if (!hl) {

@@ -2,7 +2,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 /* ============================================================
    ユーティリティ
@@ -407,7 +407,7 @@ async function activateSearchSuggest(item) {
   }
 }
 
-function renderMemoItem(m) {
+function renderMemoItem(m, peek = false) {
   const active  = m.id === state.currentId ? ' active' : '';
   const title   = esc(m.title) || '無題のメモ';
   const dts     = state.groupByDate ? (m[state.groupDateField] ?? m.updatedAt) : m.updatedAt;
@@ -421,7 +421,7 @@ function renderMemoItem(m) {
   const mark    = markById(m.mark);
   const markEl  = mark
     ? `<i class="mi-mark fa-solid ${mark.icon} mk-${mark.id}" title="${esc(mark.label)}"></i>` : '';
-  return `<li class="memo-item${active}" data-id="${m.id}"${mark ? ` data-mark="${mark.id}"` : ''}>
+  return `<li class="memo-item${active}${peek ? ' peek' : ''}" data-id="${m.id}"${mark ? ` data-mark="${mark.id}"` : ''}>
     <div class="mi-top">${markEl}<span class="mi-title">${title}</span><span class="mi-date mono">${date}</span></div>
     ${snippet ? `<div class="mi-snippet">${snippet}</div>` : ''}
     <div class="mi-foot"><div class="mi-tags">${tags}${more}</div>${imgs}</div>
@@ -460,13 +460,34 @@ function renderList() {
       const memos     = groupMap.get(key);
       const collapsed = !filtering && !state.expandedGroups.has(key);
       const chevron   = collapsed ? 'fa-chevron-right' : 'fa-chevron-down';
-      const items     = collapsed ? '' : memos.map(m => renderMemoItem(m)).join('');
+      /* 折りたたむと編集中のメモや目印（付箋）を付けたメモまで隠れてしまい、
+         今どれを編集中なのか・どこに目印を付けたのかを見失う。折りたたみ中でも
+         この2つは「付箋が折り目からはみ出している」ように残して表示し、
+         残りは「他 N 件を表示」から展開できるようにする */
+      const activeInGroup = state.currentId !== null
+        ? memos.find(m => m.id === state.currentId) : null;
+      const peeked = collapsed
+        ? memos.filter(m => m.id === state.currentId || markById(m.mark)) : [];
+      let items;
+      if (!collapsed) {
+        items = memos.map(m => renderMemoItem(m)).join('');
+      } else if (peeked.length > 0) {
+        const rest = memos.length - peeked.length;
+        items = peeked.map(m => renderMemoItem(m, true)).join('') +
+          (rest > 0 ? `<li class="group-rest" data-date="${esc(key)}">他 ${rest} 件を表示</li>` : '');
+      } else {
+        items = '';
+      }
       const imgTotal  = memos.reduce((sum, m) => sum + (m.imageCount || 0), 0);
       const imgBadge  = imgTotal > 0
         ? `<span class="date-group-imgs"><i class="fa-regular fa-image"></i>${imgTotal}</span>` : '';
-      return `<li class="date-group-header${collapsed ? ' collapsed' : ''}" data-date="${esc(key)}">` +
+      /* 折りたたみ中のグループに編集中のメモが含まれることを見出し側でも示し、
+         スクロールしていても選択位置を追えるようにする */
+      const hasActive = activeInGroup ? ' has-active' : '';
+      return `<li class="date-group-header${collapsed ? ' collapsed' : ''}${hasActive}" data-date="${esc(key)}">` +
         `<i class="fa-solid ${chevron}"></i>` +
         `<span class="date-group-label">${getDateGroupLabel(key)}</span>` +
+        (activeInGroup ? `<span class="date-group-active" title="このグループに編集中のメモがあります"></span>` : '') +
         imgBadge +
         `<span class="date-group-count">${memos.length}</span></li>${items}`;
     }).join('');
@@ -2438,9 +2459,11 @@ function bindEvents() {
 
   /* --- 一覧 → グループ折りたたみ／メモを開く --- */
   refs.memoList.addEventListener('click', async e => {
-    const header = e.target.closest('.date-group-header');
-    if (header) {
-      const date = header.dataset.date;
+    /* 「他 N 件を表示」は折りたたみ中にのみ出るため、見出しと同じトグルで
+       そのまま展開になる */
+    const toggle = e.target.closest('.date-group-header, .group-rest');
+    if (toggle) {
+      const date = toggle.dataset.date;
       if (state.expandedGroups.has(date)) state.expandedGroups.delete(date);
       else state.expandedGroups.add(date);
       renderList();

@@ -273,6 +273,68 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 .tagbar:empty{display:none}
 
+/* ============================================================
+   目印（付箋）
+   ============================================================ */
+/* 目印ごとの色。id は保存データに残るため、クラス名も変更しないこと。
+   --mark-accent は一覧の左端アクセントバー（付箋の見立て）で使う */
+.mk-star {color:#E0A32E}
+.mk-flag {color:#D7614F}
+.mk-check{color:#2DA091}
+.mk-hold {color:#5A96D7}
+.mk-pin  {color:#AA78C8}
+.mk-alert{color:#C9573F}
+.memo-item[data-mark="star"] {--mark-accent:#E0A32E}
+.memo-item[data-mark="flag"] {--mark-accent:#D7614F}
+.memo-item[data-mark="check"]{--mark-accent:#2DA091}
+.memo-item[data-mark="hold"] {--mark-accent:#5A96D7}
+.memo-item[data-mark="pin"]  {--mark-accent:#AA78C8}
+.memo-item[data-mark="alert"]{--mark-accent:#C9573F}
+
+.markbar{
+  display:flex;flex-wrap:wrap;gap:6px;
+  padding:0 14px 10px;
+}
+.markbar:empty{display:none}
+.mark-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 9px;border-radius:999px;
+  border:1px solid var(--ink-700);background:var(--ink-850);
+  color:var(--inv-sub);font-size:11px;
+  transition:background-color .12s,color .12s,border-color .12s;
+}
+.mark-chip:hover{color:var(--inv-text);border-color:var(--primary)}
+.mark-chip.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.mark-chip.active i{color:#fff}
+.mark-chip .cnt{font-family:var(--font-mono);font-size:10px;opacity:.75}
+
+/* 一覧のメモに表示される目印 */
+.mi-mark{font-size:11px;flex-shrink:0}
+
+/* 編集画面の目印ピッカー */
+.mark-picker{display:inline-flex;align-items:center;gap:3px;margin-left:auto}
+.mark-picker-label{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;color:var(--text-sub);margin-right:3px;
+}
+.mark-picker-label i{font-size:11px;color:var(--line-strong)}
+.mark-btn{
+  width:24px;height:24px;border-radius:6px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;
+  border:1px solid transparent;
+  transition:background-color .12s,border-color .12s;
+}
+.mark-btn:hover{background:var(--paper-deep)}
+.mark-btn.active{background:var(--primary-soft);border-color:var(--primary-line)}
+.mark-clear{
+  width:20px;height:20px;border-radius:50%;margin-left:2px;
+  display:inline-flex;align-items:center;justify-content:center;
+  color:var(--text-sub);font-size:10px;
+  transition:background-color .12s,color .12s;
+}
+.mark-clear:hover{background:var(--rec-soft);color:var(--rec)}
+
 .list-meta{
   display:flex;justify-content:space-between;align-items:center;
   padding:6px 10px 6px 16px;
@@ -322,10 +384,19 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 .memo-item:hover{background:var(--ink-850)}
 .memo-item:hover::before{background:var(--ink-700)}
+/* 目印付きのメモは左端のアクセントバーを目印の色にして、一覧の中で
+   ひと目で見分けられるようにする（ホバー中も色を保つ） */
+.memo-item[data-mark]::before,
+.memo-item[data-mark]:hover::before{background:var(--mark-accent)}
+/* 開いているメモは選択中であることを優先して示す */
 .memo-item.active{background:var(--paper)}
-.memo-item.active::before{background:var(--primary)}
+.memo-item.active::before,
+.memo-item.active:hover::before{background:var(--primary)}
 .mi-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .mi-title{
+  /* 目印アイコンが入ると .mi-top の子が3つになる。flex:1 を指定しないと
+     space-between でタイトルが中央寄りに押し出されてしまう */
+  flex:1;min-width:0;
   font-size:13.5px;font-weight:700;color:var(--inv-text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
@@ -1052,6 +1123,9 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   box-shadow:var(--shadow-2);
   padding:6px;
   display:flex;flex-direction:column;gap:1px;
+  /* 項目が増えて背の高いメニューになったため、ウィンドウが低いときは
+     画面内に収めてスクロールできるようにする */
+  max-height:calc(100vh - 16px);overflow-y:auto;
 }
 .ctx-item{
   display:flex;align-items:center;gap:10px;
@@ -1070,6 +1144,19 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   padding:3px 10px 5px;font-size:10px;font-weight:700;
   letter-spacing:.06em;color:var(--text-sub);text-transform:uppercase;
 }
+.ctx-row-label{padding:5px 10px 3px;font-size:11px;color:var(--text-sub)}
+.ctx-row{display:flex;flex-wrap:wrap;gap:4px;padding:0 8px 4px}
+.ctx-size{
+  flex:1 1 auto;min-width:38px;
+  padding:5px 6px;border-radius:6px;
+  border:1px solid var(--line);
+  color:var(--text);font-size:12px;text-align:center;
+  transition:background-color .12s,color .12s,border-color .12s;
+}
+.ctx-size:hover:not(:disabled){
+  background:var(--primary-soft);color:var(--primary-deep);border-color:var(--primary-line);
+}
+.ctx-size:disabled{opacity:.38;cursor:not-allowed}
 
 /* ============================================================
    トースト

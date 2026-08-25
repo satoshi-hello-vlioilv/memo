@@ -2,7 +2,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 /* ============================================================
    ユーティリティ
@@ -94,11 +94,24 @@ const Store = {
 /* ============================================================
    状態
    ============================================================ */
+/* メモに任意で付けられる目印（付箋）。id は保存データに残るため変更しないこと。
+   色は style.css の .mk-<id> と対応させる */
+const MEMO_MARKS = [
+  { id: 'star',  icon: 'fa-star',                 label: '重要' },
+  { id: 'flag',  icon: 'fa-flag',                 label: '要対応' },
+  { id: 'check', icon: 'fa-circle-check',         label: '完了' },
+  { id: 'hold',  icon: 'fa-clock',                label: '保留' },
+  { id: 'pin',   icon: 'fa-thumbtack',            label: 'ピン' },
+  { id: 'alert', icon: 'fa-triangle-exclamation', label: '注意' },
+];
+const markById = id => MEMO_MARKS.find(m => m.id === id) || null;
+
 const state = {
   memos: [], formats: [], images: [], tagsMaster: [],
   currentId: null,
+  currentMark: null,
   dirty: false, savedAt: null,
-  query: '', tagFilter: null, imageOnly: false,
+  query: '', tagFilter: null, imageOnly: false, markFilter: null,
   searchScope: { title: true, tags: true, body: true },
   searchHistory: [],
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
@@ -115,9 +128,9 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','searchScope','searchSuggest','tagBar','listCount','btnImageFilter','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','searchScope','searchSuggest','markBar','tagBar','listCount','btnImageFilter','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
-    'titleInput','stampCreated','stampUpdated','tagsInput','tagsSuggest','tagsPreview',
+    'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime','btnShowMarks',
     'btnBold','btnItalic','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
@@ -268,6 +281,7 @@ function filteredMemos() {
   return state.memos
     .filter(m => {
       if (state.imageOnly && !(m.imageCount > 0)) return false;
+      if (state.markFilter && m.mark !== state.markFilter) return false;
       if (state.tagFilter && !(m.tags || []).includes(state.tagFilter)) return false;
       if (!q) return true;
       const inTitle = scope.title && (m.title || '').toLowerCase().includes(q);
@@ -404,8 +418,11 @@ function renderMemoItem(m) {
   const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';
   const imgs    = m.imageCount > 0
     ? `<span class="mi-imgs"><i class="fa-regular fa-image"></i>${m.imageCount}</span>` : '';
-  return `<li class="memo-item${active}" data-id="${m.id}">
-    <div class="mi-top"><span class="mi-title">${title}</span><span class="mi-date mono">${date}</span></div>
+  const mark    = markById(m.mark);
+  const markEl  = mark
+    ? `<i class="mi-mark fa-solid ${mark.icon} mk-${mark.id}" title="${esc(mark.label)}"></i>` : '';
+  return `<li class="memo-item${active}" data-id="${m.id}"${mark ? ` data-mark="${mark.id}"` : ''}>
+    <div class="mi-top">${markEl}<span class="mi-title">${title}</span><span class="mi-date mono">${date}</span></div>
     ${snippet ? `<div class="mi-snippet">${snippet}</div>` : ''}
     <div class="mi-foot"><div class="mi-tags">${tags}${more}</div>${imgs}</div>
   </li>`;
@@ -458,10 +475,24 @@ function renderList() {
 
   const empty = list.length === 0;
   refs.listEmpty.hidden = !empty;
-  refs.listEmptyMsg.innerHTML = (state.query || state.tagFilter || state.imageOnly)
-    ? '条件に一致するメモがありません。<br>検索語・検索範囲・タグ・画像フィルタを見直してください。'
+  refs.listEmptyMsg.innerHTML = (state.query || state.tagFilter || state.imageOnly || state.markFilter)
+    ? '条件に一致するメモがありません。<br>検索語・検索範囲・タグ・目印・画像フィルタを見直してください。'
     : 'メモはまだありません。<br>「新規メモ」から作成できます。';
+  renderMarkBar();
   renderTagBar();
+}
+/* 実際に使われている目印だけを絞り込みチップとして並べる。1件も無ければ
+   バー自体を空にして場所を取らない(.markbar:empty で非表示) */
+function renderMarkBar() {
+  const counts = new Map();
+  for (const m of state.memos) {
+    if (m.mark && markById(m.mark)) counts.set(m.mark, (counts.get(m.mark) || 0) + 1);
+  }
+  refs.markBar.innerHTML = MEMO_MARKS.filter(mk => counts.has(mk.id)).map(mk =>
+    `<button class="mark-chip ${state.markFilter === mk.id ? 'active' : ''}" data-mark="${mk.id}"
+       title="「${esc(mk.label)}」の目印が付いたメモだけを表示">
+       <i class="fa-solid ${mk.icon} mk-${mk.id}"></i>${esc(mk.label)}
+       <span class="cnt">${counts.get(mk.id)}</span></button>`).join('');
 }
 function renderTagBar() {
   const counts = new Map();
@@ -482,7 +513,28 @@ function collectFields() {
     title: refs.titleInput.value.trim(),
     tags : parseTags(refs.tagsInput.value),
     body : serializeBody(),
+    mark : state.currentMark,
   };
+}
+/* 編集中メモの目印ピッカー。同じ目印をもう一度押すと外れる（トグル） */
+function renderMarkPicker() {
+  const cur = state.currentMark;
+  refs.markPicker.innerHTML =
+    `<span class="mark-picker-label"><i class="fa-regular fa-note-sticky"></i> 目印</span>` +
+    MEMO_MARKS.map(mk =>
+      `<button class="mark-btn ${cur === mk.id ? 'active' : ''}" data-mark="${mk.id}"
+         title="${esc(mk.label)}${cur === mk.id ? '（クリックで外す）' : 'の目印を付ける'}">
+         <i class="fa-solid ${mk.icon} mk-${mk.id}"></i></button>`).join('') +
+    (cur ? `<button class="mark-clear" title="目印を外す"><i class="fa-solid fa-xmark"></i></button>` : '');
+}
+function setCurrentMark(markId) {
+  const next = state.currentMark === markId ? null : markId;
+  if (next === state.currentMark) return;
+  state.currentMark = next;
+  renderMarkPicker();
+  markDirty();
+  const mk = markById(next);
+  toast(mk ? `目印「${mk.label}」を付けました（保存で確定）` : '目印を外しました（保存で確定）', 'info');
 }
 function showSheet() {
   refs.welcome.hidden = true;
@@ -492,6 +544,7 @@ function showWelcome() {
   refs.sheet.hidden = true;
   refs.welcome.hidden = false;
   state.currentId = null;
+  state.currentMark = null;
   state.dirty = false;
   loadImages();
 }
@@ -530,10 +583,11 @@ async function openMemo(id) {
   state.currentId = id;
   state.dirty = false;
   state.savedAt = m.updatedAt;
+  state.currentMark = markById(m.mark) ? m.mark : null;
   refs.titleInput.value = m.title || '';
   refs.tagsInput.value  = (m.tags || []).join(', ');
   showSheet();
-  renderStamps(); renderSaveState(); renderTagsPreview(); renderList();
+  renderStamps(); renderSaveState(); renderTagsPreview(); renderMarkPicker(); renderList();
   await loadImages();
   deserializeBody(m.body || '');
   renderCharCount();
@@ -543,12 +597,13 @@ function newMemo() {
   state.currentId = null;
   state.dirty = false;
   state.savedAt = null;
+  state.currentMark = null;
   refs.titleInput.value = '';
   refs.tagsInput.value = '';
   refs.bodyInput.innerHTML = '';
   rebuildLineMarks();
   showSheet();
-  renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderList();
+  renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderMarkPicker(); renderList();
   loadImages();
   refs.titleInput.focus();
 }
@@ -1127,6 +1182,21 @@ function rebuildLineMarks() {
 }
 const rebuildLineMarksDebounced = debounce(rebuildLineMarks, 200);
 
+/* ノードが実際に描画されている行の矩形を返す。テキストノードは Range 経由で
+   なければ矩形が取れないため、種類に応じて取得方法を切り替える */
+function rectOfNode(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const r = document.createRange();
+    r.selectNodeContents(node);
+    return r.getClientRects()[0] || null;
+  }
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const rect = node.getBoundingClientRect();
+    return rect.height > 0 ? rect : null;
+  }
+  return null;
+}
+
 /* カーソルのある行を薄くハイライトし、キャレット位置を見失わないようにする。
    フォーカスが本文エディタに無い場合は非表示にする。 */
 function updateCursorHighlight() {
@@ -1162,7 +1232,18 @@ function updateCursorHighlight() {
       /* それでも矩形が取れない場合(空要素など)は、キャレットを含む要素自体の
          矩形にフォールバックする */
       const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-      rect = el && el.getBoundingClientRect();
+      /* ただしその要素がエディタ自身の場合(書式解除の直後など、選択が
+         bodyInput 直下のオフセットを指している状態)、そのまま使うと
+         ハイライトがエディタ全体を覆ってしまう。キャレット位置の子ノードから
+         実際の行の矩形を求め、取れなければハイライトを出さない */
+      if (el === refs.bodyInput) {
+        const kids = [...el.childNodes].filter(n => n !== hl &&
+          !(n.nodeType === Node.ELEMENT_NODE && n.classList && n.classList.contains('line-mark')));
+        const at = kids[Math.min(range.startOffset, kids.length - 1)];
+        rect = at && rectOfNode(at);
+      } else {
+        rect = el && el.getBoundingClientRect();
+      }
     }
   }
   if (!rect || rect.height === 0) { if (hl) hl.remove(); return; }
@@ -1251,6 +1332,11 @@ function getSelectedTextNodesInRange(range) {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode: node => {
       if (!range.intersectsNode(node)) return NodeFilter.FILTER_REJECT;
+      /* 長さ0のテキストノードは extractContents/insertNode の副産物として
+         残ることがある。書式の対象にならないだけでなく、これを数えてしまうと
+         「選択範囲がすべて書式済みか」の判定が常に偽になり、太字・斜体の
+         解除（トグルOFF）が効かなくなるため除外する */
+      if (node.textContent.length === 0) return NodeFilter.FILTER_REJECT;
       const p = node.parentElement;
       if (p && p.closest('.body-img, .line-mark, .current-line-hl')) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
@@ -1490,6 +1576,20 @@ function buildCtxMenu(hasSel) {
       { act: 'toFull',    icon: 'fa-up-right-and-down-left-from-center', label: '半角 → 全角', need: true },
       { act: 'count',     icon: 'fa-calculator', label: '文字数を数える', need: true },
     ]},
+    { head: '書式', items: [
+      { act: 'fmtBold',   icon: 'fa-bold',   label: '太字（切替）',  need: true },
+      { act: 'fmtItalic', icon: 'fa-italic', label: '斜体（切替）',  need: true },
+    ], row: {
+      label: '文字サイズ',
+      items: [
+        { act: 'size12', label: '小' },
+        { act: 'size15', label: '標準' },
+        { act: 'size19', label: '大' },
+        { act: 'size24', label: '特大' },
+        { act: 'size32', label: '最大' },
+        { act: 'sizeReset', label: '解除' },
+      ],
+    }},
     { head: 'その他', items: [
       { act: 'addImage', icon: 'fa-image', label: '画像を登録…' },
     ]},
@@ -1504,6 +1604,15 @@ function buildCtxMenu(hasSel) {
         `<i class="fa-solid ${it.icon}"></i><span class="ctx-label">${it.label}</span>` +
         (it.hint ? `<span class="ctx-hint mono">${esc(it.hint)}</span>` : '') +
         `</button>`;
+    }
+    /* 文字サイズは選択肢が多く、1項目1行だとメニューが縦に伸びすぎるため
+       横並びの小さなボタン列にまとめる */
+    if (g.row) {
+      const dis = hasSel ? '' : ' disabled';
+      html += `<div class="ctx-row-label">${g.row.label}</div><div class="ctx-row">` +
+        g.row.items.map(it =>
+          `<button class="ctx-size" data-act="${it.act}"${dis}>${it.label}</button>`).join('') +
+        `</div>`;
     }
   });
   return html;
@@ -1543,8 +1652,27 @@ function runCtxAction(act) {
     case 'toFull':      if (selText) replaceSelection(toFullWidth(selText)); break;
     case 'count':       toast(`選択中の文字数：${selText.length} 文字`, 'info'); break;
     case 'addImage':    refs.fileInput.click(); break;
+    case 'fmtBold':     runCtxFormat(() => toggleTagFormat(
+                          el => el.tagName === 'B' || el.tagName === 'STRONG',
+                          () => document.createElement('b'))); break;
+    case 'fmtItalic':   runCtxFormat(() => toggleTagFormat(
+                          el => el.tagName === 'I' || el.tagName === 'EM',
+                          () => document.createElement('i'))); break;
+    case 'sizeReset':   runCtxFormat(() => clearFormatType('size', '選択範囲に文字サイズは設定されていません')); break;
+    default:
+      if (/^size\d+$/.test(act)) {
+        const px = act.slice(4);
+        runCtxFormat(() => applyInlineFormat(() => createFormatElement('size', px), 'size'));
+      }
   }
   hideCtxMenu();
+}
+
+/* 書式系のアクションは savedBodyRange を参照するため、メニューを開いた時点の
+   選択範囲(runCtxAction 冒頭で復元済み)をここで退避してから実行する */
+function runCtxFormat(fn) {
+  if (!captureBodySelection()) { toast('書式を適用するテキストを選択してください', 'info'); return; }
+  fn();
 }
 
 async function loadImages() {
@@ -2294,6 +2422,20 @@ function bindEvents() {
     renderList();
   });
 
+  /* --- 目印（付箋）：一覧の絞り込み／編集中メモへの付け外し --- */
+  refs.markBar.addEventListener('click', e => {
+    const chip = e.target.closest('.mark-chip');
+    if (!chip) return;
+    const mk = chip.dataset.mark;
+    state.markFilter = state.markFilter === mk ? null : mk;
+    renderList();
+  });
+  refs.markPicker.addEventListener('click', e => {
+    if (e.target.closest('.mark-clear')) { setCurrentMark(null); return; }
+    const btn = e.target.closest('.mark-btn');
+    if (btn) setCurrentMark(btn.dataset.mark);
+  });
+
   /* --- 一覧 → グループ折りたたみ／メモを開く --- */
   refs.memoList.addEventListener('click', async e => {
     const header = e.target.closest('.date-group-header');
@@ -2505,7 +2647,7 @@ function bindEvents() {
   });
   refs.ctxMenu.addEventListener('mousedown', e => e.preventDefault());   /* 選択・フォーカス維持 */
   refs.ctxMenu.addEventListener('click', e => {
-    const btn = e.target.closest('.ctx-item');
+    const btn = e.target.closest('.ctx-item, .ctx-size');
     if (!btn || btn.disabled) return;
     runCtxAction(btn.dataset.act);
   });

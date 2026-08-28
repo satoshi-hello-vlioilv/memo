@@ -442,6 +442,13 @@ button:disabled{cursor:not-allowed;opacity:.45}
   color:var(--inv-sub);
 }
 .date-group-imgs i{width:auto;font-size:9.5px}
+/* 見出しに集約表示する目印（折りたたみ中でもその日の目印が分かる） */
+.date-group-mark{
+  display:inline-flex;align-items:center;gap:2px;flex-shrink:0;
+  font-family:var(--font-mono);font-size:9.5px;color:var(--inv-sub);
+}
+.date-group-mark i{width:auto;font-size:10px}
+.date-group-mark .dgm-n{opacity:.8}
 .date-group-header:hover .date-group-imgs{color:var(--inv-text)}
 .date-group-count{
   font-family:var(--font-mono);font-size:10px;
@@ -780,6 +787,23 @@ button:disabled{cursor:not-allowed;opacity:.45}
   caret-color:var(--primary);
 }
 .body-editable [data-fmt="hl"]{border-radius:2px;padding:0 1px}
+.body-editable a[data-fmt="link"]{
+  color:var(--primary);text-decoration:underline;
+  text-underline-offset:2px;cursor:pointer;
+}
+.body-editable a[data-fmt="link"]:hover{color:var(--primary-deep);background:var(--primary-soft)}
+
+/* ダイアログの入力欄（リンクの挿入・編集など） */
+.dlg-fields{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.dlg-field{display:flex;flex-direction:column;gap:5px}
+.dlg-field span{font-size:11.5px;color:var(--text-sub);font-weight:600}
+.dlg-field input{
+  height:36px;padding:0 11px;
+  border:1px solid var(--line);border-radius:var(--radius-s);
+  background:var(--surface);font-size:13.5px;outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.dlg-field input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(19,121,108,.15)}
 .line-mark{
   position:absolute;
   color:var(--primary);opacity:.5;
@@ -1167,8 +1191,40 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   padding:3px 10px 5px;font-size:10px;font-weight:700;
   letter-spacing:.06em;color:var(--text-sub);text-transform:uppercase;
 }
+.ctx-keys{
+  color:var(--text-sub);font-size:10.5px;flex-shrink:0;
+  font-family:var(--font-mono);
+}
+.ctx-item:hover:not(:disabled) .ctx-keys{color:var(--primary-deep)}
 .ctx-row-label{padding:5px 10px 3px;font-size:11px;color:var(--text-sub)}
 .ctx-row{display:flex;flex-wrap:wrap;gap:4px;padding:0 8px 4px}
+/* 文字色パレット */
+.ctx-row--colors{gap:6px;padding:0 10px 6px}
+.ctx-swatch{
+  width:22px;height:22px;border-radius:50%;
+  background:var(--sw);
+  border:1px solid rgba(0,0,0,.18);
+  transition:transform .12s,box-shadow .12s;
+}
+.ctx-swatch:hover:not(:disabled){transform:scale(1.14);box-shadow:0 0 0 2px var(--primary-line)}
+.ctx-swatch:disabled{opacity:.38;cursor:not-allowed}
+/* 「既定（黒）」は色を外す操作なので、斜線で他の色と区別する */
+.ctx-swatch.is-reset{
+  background:
+    linear-gradient(45deg,transparent 44%,#fff 44%,#fff 56%,transparent 56%),
+    var(--sw);
+}
+/* 折りたためるセクションの見出し */
+.ctx-fold{
+  display:flex;align-items:center;gap:8px;
+  width:100%;padding:6px 10px;border-radius:6px;
+  color:var(--text-sub);font-size:11px;font-weight:700;
+  letter-spacing:.04em;text-align:left;
+  transition:background-color .12s,color .12s;
+}
+.ctx-fold:hover{background:var(--paper-deep);color:var(--text)}
+.ctx-fold > i{width:10px;font-size:9px;flex-shrink:0}
+.ctx-foldbody{display:flex;flex-direction:column;gap:1px}
 .ctx-size{
   flex:1 1 auto;min-width:38px;
   padding:5px 6px;border-radius:6px;

@@ -2,7 +2,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 /* ============================================================
    ユーティリティ
@@ -166,25 +166,64 @@ function toast(msg, type = 'info') {
 }
 
 let dialogResolve = null;
-function dialog({ title, message, buttons }) {
+/* fields を渡すと入力欄付きのダイアログになる。決定時は
+   { value: ボタンの値, fields: { name: 入力値 } } を返す */
+function dialog({ title, message, buttons, fields }) {
   return new Promise(resolve => {
     dialogResolve = resolve;
     refs.dlgTitle.textContent = title;
     refs.dlgMsg.textContent = message;
     refs.dlgFoot.innerHTML = '';
+    const inputs = {};
+    const existing = refs.dlgMsg.parentElement.querySelector('.dlg-fields');
+    if (existing) existing.remove();
+    if (fields && fields.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'dlg-fields';
+      for (const f of fields) {
+        const row = document.createElement('label');
+        row.className = 'dlg-field';
+        const lab = document.createElement('span');
+        lab.textContent = f.label;
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = f.value || '';
+        inp.placeholder = f.placeholder || '';
+        inp.autocomplete = 'off';
+        inp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const primary = buttons.find(b => b.kind === 'primary') || buttons[buttons.length - 1];
+            finish(primary.value);
+          }
+        });
+        row.append(lab, inp);
+        wrap.appendChild(row);
+        inputs[f.name] = inp;
+      }
+      refs.dlgMsg.parentElement.appendChild(wrap);
+    }
+    const finish = value => {
+      const collected = {};
+      for (const k in inputs) collected[k] = inputs[k].value;
+      closeDialog(fields && fields.length ? { value, fields: collected } : value);
+    };
     for (const b of buttons) {
       const btn = document.createElement('button');
       btn.className = `btn ${b.kind === 'primary' ? 'btn-primary' : b.kind === 'danger' ? 'btn-danger' : 'btn-quiet'}`;
       btn.textContent = b.label;
-      btn.addEventListener('click', () => closeDialog(b.value));
+      btn.addEventListener('click', () => finish(b.value));
       refs.dlgFoot.appendChild(btn);
     }
     refs.dialogRoot.hidden = false;
-    refs.dlgFoot.querySelector('.btn-primary, .btn-danger, .btn')?.focus();
+    const firstInput = Object.values(inputs)[0];
+    if (firstInput) { firstInput.focus(); firstInput.select(); }
+    else refs.dlgFoot.querySelector('.btn-primary, .btn-danger, .btn')?.focus();
   });
 }
 function closeDialog(value) {
   refs.dialogRoot.hidden = true;
+  refs.dlgMsg.parentElement.querySelector('.dlg-fields')?.remove();
   if (dialogResolve) { dialogResolve(value); dialogResolve = null; }
 }
 
@@ -268,7 +307,7 @@ function sortField() {
   return state.groupByDate ? state.groupDateField : 'updatedAt';
 }
 const BODY_IMG_MARKER_RE = /\[img:\d+(?::[lcr])?(?::(?:[sml]|\d+|fit))?\]/g;
-const BODY_FMT_TAG_RE = /\[\/?(?:b|i|size(?:=\d{1,3})?|color(?:=#[0-9a-fA-F]{6})?|hl(?:=#[0-9a-fA-F]{6})?)\]/g;
+const BODY_FMT_TAG_RE = /\[\/?(?:b|i|size(?:=\d{1,3})?|color(?:=#[0-9a-fA-F]{6})?|hl(?:=#[0-9a-fA-F]{6})?|link(?:=[^\]]*)?)\]/g;
 const stripMarkers = text => String(text ?? '')
   .replace(BODY_IMG_MARKER_RE, ' ')
   .replace(BODY_FMT_TAG_RE, '')
@@ -481,6 +520,18 @@ function renderList() {
       const imgTotal  = memos.reduce((sum, m) => sum + (m.imageCount || 0), 0);
       const imgBadge  = imgTotal > 0
         ? `<span class="date-group-imgs"><i class="fa-regular fa-image"></i>${imgTotal}</span>` : '';
+      /* 画像バッジと同じように、そのグループに含まれる目印も見出しへ集約して
+         表示する。折りたたんでいても、どの目印がその日に付いているかが分かる */
+      const markCounts = new Map();
+      for (const m of memos) {
+        if (m.mark && markById(m.mark)) markCounts.set(m.mark, (markCounts.get(m.mark) || 0) + 1);
+      }
+      const markBadges = MEMO_MARKS.filter(mk => markCounts.has(mk.id)).map(mk => {
+        const n = markCounts.get(mk.id);
+        return `<span class="date-group-mark" title="${esc(mk.label)} ${n} 件">` +
+          `<i class="fa-solid ${mk.icon} mk-${mk.id}"></i>` +
+          (n > 1 ? `<span class="dgm-n">${n}</span>` : '') + `</span>`;
+      }).join('');
       /* 折りたたみ中のグループに編集中のメモが含まれることを見出し側でも示し、
          スクロールしていても選択位置を追えるようにする */
       const hasActive = activeInGroup ? ' has-active' : '';
@@ -488,6 +539,7 @@ function renderList() {
         `<i class="fa-solid ${chevron}"></i>` +
         `<span class="date-group-label">${getDateGroupLabel(key)}</span>` +
         (activeInGroup ? `<span class="date-group-active" title="このグループに編集中のメモがあります"></span>` : '') +
+        markBadges +
         imgBadge +
         `<span class="date-group-count">${memos.length}</span></li>${items}`;
     }).join('');
@@ -766,12 +818,35 @@ function addTextWithBreaks(parent, text) {
   }
 }
 
-/* 書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex])に対応する要素を生成する。
-   size/color/hl はインライン style で表現し、シリアライズ時に判別できるよう
-   data-fmt 属性を付ける */
+/* リンクの URL を安全な形に整える。javascript: のような実行を伴うスキームは
+   受け付けず、スキーム省略時は https:// を補う */
+function safeLinkUrl(raw) {
+  const url = String(raw ?? '').trim();
+  if (!url) return null;
+  if (/^(https?:|mailto:)/i.test(url)) return url;
+  if (/^[\w.+-]+@[\w.-]+\.\w+$/.test(url)) return 'mailto:' + url;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return null;
+  return 'https://' + url;
+}
+
+/* 書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex] [link=URL])に対応する要素を
+   生成する。size/color/hl はインライン style で表現し、シリアライズ時に
+   判別できるよう data-fmt 属性を付ける */
 function createFormatElement(tag, param) {
   if (tag === 'b') return document.createElement('b');
   if (tag === 'i') return document.createElement('i');
+  if (tag === 'link') {
+    const url = safeLinkUrl(param);
+    /* 安全でない URL は書式化せず、ただの span として中身だけ残す */
+    if (!url) { const s = document.createElement('span'); return s; }
+    const a = document.createElement('a');
+    a.dataset.fmt = 'link';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = `${url}\nCtrl+クリック（Mac は ⌘+クリック）で開きます`;
+    return a;
+  }
   const span = document.createElement('span');
   span.dataset.fmt = tag;
   if (tag === 'size') {
@@ -795,8 +870,8 @@ function createFormatElement(tag, param) {
    lastIndex が 0 にリセットされるため、閉じタグの無い開始タグ(ユーザーが
    文字通り「[b]」と入力した場合など)で呼び出し元が先頭から再走査してしまい、
    無限ループでアプリ全体がフリーズする致命的な不具合があった。 */
-const BODY_TOKEN_RE = /\[img:(?<imgId>\d+)(?::(?<imgAlign>[lcr]))?(?::(?<imgSize>[sml]|\d+|fit))?\]|\[(?<close>\/)?(?<tag>b|i|size|color|hl)(?:=(?<param>[^\]]*))?\]/g;
-const BODY_FMT_TAGS = ['b', 'i', 'size', 'color', 'hl'];
+const BODY_TOKEN_RE = /\[img:(?<imgId>\d+)(?::(?<imgAlign>[lcr]))?(?::(?<imgSize>[sml]|\d+|fit))?\]|\[(?<close>\/)?(?<tag>b|i|size|color|hl|link)(?:=(?<param>[^\]]*))?\]/g;
+const BODY_FMT_TAGS = ['b', 'i', 'size', 'color', 'hl', 'link'];
 function textToFragment(text) {
   let pos = 0;
   /* 各タグの閉じタグ位置を先に列挙しておく。開始タグごとに indexOf で後方を
@@ -898,6 +973,12 @@ function serializeBody() {
       } else if (fmt === 'hl') {
         const hex = rgbToHex(node.style.backgroundColor);
         if (hex) wrapTag(node, `[hl=${hex}]`, '[/hl]');
+        else for (const c of node.childNodes) walk(c);
+      } else if (fmt === 'link') {
+        /* URL に ] が含まれるとマーカーが壊れるため、その場合は
+           リンクを諦めて文字だけ残す */
+        const url = node.getAttribute('href') || '';
+        if (url && !url.includes(']')) wrapTag(node, `[link=${url}]`, '[/link]');
         else for (const c of node.childNodes) walk(c);
       } else {
         for (const c of node.childNodes) walk(c);
@@ -1393,6 +1474,99 @@ function unwrapElement(el) {
   parent.removeChild(el);
 }
 const isAnyFormatEl = el => el.tagName === 'B' || el.tagName === 'STRONG' || el.tagName === 'I' || el.tagName === 'EM' || (el.dataset && el.dataset.fmt);
+const isFmtType = type => el => !!(el.dataset && el.dataset.fmt === type);
+
+/* 分割・解除の結果、中身が空になった書式要素を取り除く。残しておくと
+   保存データに [color=#xxxxxx][/color] のような空タグとして書き出されてしまう。
+   <br> や画像を含むものは行構造を保つため残す */
+function pruneEmptyFormatEls() {
+  for (const el of $$('[data-fmt], b, strong, i, em', refs.bodyInput)) {
+    if (el.closest('.body-img')) continue;
+    if (el.textContent.length === 0 && !el.querySelector('br, img, .body-img')) el.remove();
+  }
+}
+
+/* 選択の境界でテキストノードを分割し、選択範囲がノードの境界にちょうど
+   揃うようにする。こうしておくと「選択した文字だけ」を単位に扱える */
+function isolateRangeText(range) {
+  const sc = range.startContainer, so = range.startOffset;
+  const ec = range.endContainer, eo = range.endOffset;
+  if (ec.nodeType === Node.TEXT_NODE && eo > 0 && eo < ec.textContent.length) ec.splitText(eo);
+  if (sc.nodeType === Node.TEXT_NODE && so > 0 && so < sc.textContent.length) {
+    const mid = sc.splitText(so);
+    range.setStart(mid, 0);
+    if (sc === ec) range.setEnd(mid, mid.textContent.length);
+  }
+}
+
+/* el を child の前後で分割し、el 自身には child だけが残るようにする。
+   前後に内容があれば el と同じ書式のコピーを作ってそちらへ移すので、
+   選択範囲外の文字には書式が残る */
+function splitElementAroundChild(el, child) {
+  const parent = el.parentNode;
+  const before = [], after = [];
+  let seen = false;
+  for (const n of [...el.childNodes]) {
+    if (n === child) { seen = true; continue; }
+    (seen ? after : before).push(n);
+  }
+  if (before.length) {
+    const b = el.cloneNode(false);
+    before.forEach(n => b.appendChild(n));
+    parent.insertBefore(b, el);
+  }
+  if (after.length) {
+    const a = el.cloneNode(false);
+    after.forEach(n => a.appendChild(n));
+    parent.insertBefore(a, el.nextSibling);
+  }
+}
+
+/* node を、predicate に一致する祖先の外へ取り出す。間にある一致しない要素
+   (色を消すときの <b> など)は保ったまま、一致する要素だけを剥がす */
+function liftNodeOutOfFormats(node, predicate) {
+  for (;;) {
+    let outermost = null;
+    let el = node.parentNode;
+    while (el && el !== refs.bodyInput) {
+      if (el.nodeType === Node.ELEMENT_NODE && predicate(el)) outermost = el;
+      el = el.parentNode;
+    }
+    if (!outermost) return;
+    /* node から outermost までの経路を、node だけを含む状態に分割してから剥がす */
+    let cur = node;
+    while (cur.parentNode !== outermost) {
+      splitElementAroundChild(cur.parentNode, cur);
+      cur = cur.parentNode;
+    }
+    splitElementAroundChild(outermost, cur);
+    unwrapElement(outermost);
+  }
+}
+
+/* 選択範囲の「文字だけ」から、predicate に一致する書式を取り除く。
+   従来は書式要素を丸ごとアンラップしていたため、要素の一部だけを選んで
+   解除すると選択外の文字まで書式が外れ、逆に解除したいのに外れないという
+   状態が起きていた。境界で分割してから祖先を剥がすことで、選択した範囲に
+   だけ正確に効かせる。
+   戻り値は処理した内容を指す Range（呼び出し側で選択を復元するため）。 */
+function clearFormatInRange(range, predicate) {
+  isolateRangeText(range);
+  const nodes = getSelectedTextNodesInRange(range).filter(n => {
+    const nr = document.createRange();
+    nr.selectNodeContents(n);
+    return range.compareBoundaryPoints(Range.START_TO_START, nr) <= 0 &&
+           range.compareBoundaryPoints(Range.END_TO_END, nr) >= 0;
+  });
+  if (nodes.length === 0) return null;
+  for (const n of nodes) liftNodeOutOfFormats(n, predicate);
+  pruneEmptyFormatEls();
+  const last = nodes[nodes.length - 1];
+  const r = document.createRange();
+  r.setStart(nodes[0], 0);
+  r.setEnd(last, last.textContent.length);
+  return r;
+}
 
 /* 選択範囲に含まれる各テキストノードを個別に makeEl() の要素で包む。
    単一の要素で選択範囲全体を包もうとすると(Range.surroundContents)、
@@ -1400,15 +1574,26 @@ const isAnyFormatEl = el => el.tagName === 'B' || el.tagName === 'STRONG' || el.
    処理することで行構造を壊さずに書式を適用できるようにしている。
 
    fmtType を渡した場合(文字サイズ・文字色・ハイライトのような「値を持つ」
-   書式)、選択がちょうどノード全体かつ既に同種の書式でだけ包まれているときは
-   入れ子にせずその場で値を差し替える。単純に入れ子で重ねると、視覚的には
-   新しい値で上書きされていても外側の古いラッパー(例: 大きいフォントサイズ)が
-   行の高さなどに影響し続けたまま残ってしまい、値を戻しても見た目が戻らない
-   不具合になる */
+   書式)は、包む前に選択範囲から同じ種類の書式を取り除く。こうしないと
+   適用のたびにラッパーが入れ子で積み重なり、見た目は新しい値で上書きされて
+   いても外側の古いラッパー(例: 大きいフォントサイズ)が行の高さなどに影響し
+   続け、値を戻しても元に戻らない状態になる */
 function applyInlineFormat(makeEl, fmtType) {
   if (!restoreBodySelection()) { toast('書式を適用するテキストを選択してください', 'info'); return; }
   const sel = window.getSelection();
-  const range = sel.getRangeAt(0);
+  let range = sel.getRangeAt(0);
+  if (getSelectedTextNodesInRange(range).length === 0) {
+    toast('書式を適用するテキストを選択してください', 'info'); return;
+  }
+  /* 同種の書式を先に剥がしてから包み直す（入れ子の蓄積を防ぐ） */
+  if (fmtType) {
+    const cleared = clearFormatInRange(range, isFmtType(fmtType));
+    if (cleared) {
+      range = cleared;
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
   const textNodes = getSelectedTextNodesInRange(range);
   if (textNodes.length === 0) { toast('書式を適用するテキストを選択してください', 'info'); return; }
   /* extractContents/insertNode で先に処理したノードが Range の境界を
@@ -1422,17 +1607,6 @@ function applyInlineFormat(makeEl, fmtType) {
     if (node === startContainer) nodeRange.setStart(node, startOffset);
     if (node === endContainer) nodeRange.setEnd(node, endOffset);
     if (nodeRange.collapsed) continue;
-    const parent = node.parentElement;
-    const wholeNodeSelected = nodeRange.startOffset === 0 && nodeRange.endOffset === node.textContent.length;
-    if (fmtType && wholeNodeSelected && parent && parent.dataset && parent.dataset.fmt === fmtType &&
-        parent.childNodes.length === 1 && parent.firstChild === node) {
-      const fresh = makeEl();
-      if (fmtType === 'size') parent.style.fontSize = fresh.style.fontSize;
-      else if (fmtType === 'color') parent.style.color = fresh.style.color;
-      else if (fmtType === 'hl') parent.style.backgroundColor = fresh.style.backgroundColor;
-      wrapped.push(parent);
-      continue;
-    }
     const extracted = nodeRange.extractContents();
     const el = makeEl();
     el.appendChild(extracted);
@@ -1478,17 +1652,15 @@ function toggleTagFormat(matchTag, makeEl) {
     }
     return false;
   };
+  /* 選択範囲がすべて適用済みなら解除する。選択した文字だけに効かせるため、
+     要素を丸ごとアンラップせず範囲単位で剥がす */
   if (textNodes.every(hasAncestor)) {
-    const touched = new Set();
-    for (const node of textNodes) {
-      let el = node.parentElement;
-      while (el && el !== refs.bodyInput) {
-        if (matchTag(el)) touched.add(el);
-        el = el.parentElement;
-      }
+    const cleared = clearFormatInRange(range, matchTag);
+    if (cleared) {
+      sel.removeAllRanges();
+      sel.addRange(cleared);
+      savedBodyRange = cleared.cloneRange();
     }
-    for (const el of touched) unwrapElement(el);
-    refs.bodyInput.normalize();
     markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
     return;
   }
@@ -1525,33 +1697,130 @@ function toggleTagFormat(matchTag, makeEl) {
   markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
 }
 
-/* 選択範囲に関わる、predicate に一致する書式要素を丸ごとアンラップする。要素の
-   一部だけが選択されている場合も、その要素全体の書式を解除する(文字単位の
-   精密な分割は行わない簡易な実装)。壊れた選択状態を残さないよう normalize() で
-   隣接テキストノードを統合しておく */
+/* 選択した文字だけから、predicate に一致する書式を解除する。
+   選択範囲が書式要素の一部でも、その範囲だけを正確に解除する */
 function clearFormatMatching(predicate, emptyMessage) {
   if (!restoreBodySelection()) { toast('書式を解除するテキストを選択してください', 'info'); return; }
   const sel = window.getSelection();
   const range = sel.getRangeAt(0);
   const textNodes = getSelectedTextNodesInRange(range);
-  const touched = new Set();
-  for (const node of textNodes) {
+  const hasTarget = textNodes.some(node => {
     let el = node.parentElement;
     while (el && el !== refs.bodyInput) {
-      if (predicate(el)) touched.add(el);
+      if (predicate(el)) return true;
       el = el.parentElement;
     }
+    return false;
+  });
+  if (!hasTarget) { toast(emptyMessage, 'info'); return; }
+  const cleared = clearFormatInRange(range, predicate);
+  if (cleared) {
+    sel.removeAllRanges();
+    sel.addRange(cleared);
+    savedBodyRange = cleared.cloneRange();
   }
-  if (touched.size === 0) { toast(emptyMessage, 'info'); return; }
-  for (const el of touched) unwrapElement(el);
-  refs.bodyInput.normalize();
   markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
 }
-function clearInlineFormat() {
-  clearFormatMatching(isAnyFormatEl, '選択範囲に書式は設定されていません');
-}
 function clearFormatType(fmtType, emptyMessage) {
-  clearFormatMatching(el => el.dataset && el.dataset.fmt === fmtType, emptyMessage);
+  clearFormatMatching(isFmtType(fmtType), emptyMessage);
+}
+/* 選択範囲を既定の書式（黒・標準サイズ・太さ普通）に戻す。
+   本文エディタの地の書式がそのまま既定値なので、インライン書式を
+   すべて取り除けば既定に戻る */
+function resetFormatToDefault() {
+  if (!restoreBodySelection()) { toast('標準に戻すテキストを選択してください', 'info'); return; }
+  const sel = window.getSelection();
+  const range = sel.getRangeAt(0);
+  if (getSelectedTextNodesInRange(range).length === 0) {
+    toast('標準に戻すテキストを選択してください', 'info'); return;
+  }
+  const cleared = clearFormatInRange(range, isAnyFormatEl);
+  if (cleared) {
+    sel.removeAllRanges();
+    sel.addRange(cleared);
+    savedBodyRange = cleared.cloneRange();
+  }
+  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+  toast('標準の書式（黒・標準サイズ・太さ普通）に戻しました', 'success');
+}
+
+/* ============================================================
+   本文中のリンク（挿入・編集・解除）
+   ============================================================ */
+/* キャレット位置が既存のリンクの中にあればその <a> を返す */
+function currentLinkEl() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const node = sel.getRangeAt(0).startContainer;
+  let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  while (el && el !== refs.bodyInput) {
+    if (el.tagName === 'A' && el.dataset && el.dataset.fmt === 'link') return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+async function insertOrEditLink() {
+  const existing = currentLinkEl();
+  const sel = window.getSelection();
+  /* ダイアログを開くとフォーカスが移り選択が失われるため、
+     キャレット位置（折りたたんだ選択）も含めてここで控えておく */
+  let savedRange = null;
+  if (sel && sel.rangeCount > 0 && refs.bodyInput.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+    savedRange = sel.getRangeAt(0).cloneRange();
+  }
+  const selText = sel && !sel.isCollapsed ? sel.toString() : '';
+  const res = await dialog({
+    title: existing ? 'リンクを編集' : 'リンクを挿入',
+    message: 'スキームを省略した場合は https:// を補います。メールアドレスは mailto: になります。',
+    fields: [
+      { name: 'url',  label: 'URL', value: existing ? existing.getAttribute('href') : '', placeholder: 'example.com/page' },
+      { name: 'text', label: '表示する文字', value: existing ? existing.textContent : selText, placeholder: 'リンクの文字' },
+    ],
+    buttons: [
+      { label: 'キャンセル', value: 'cancel' },
+      ...(existing ? [{ label: 'リンクを解除', value: 'unlink', kind: 'danger' }] : []),
+      { label: existing ? '更新' : '挿入', value: 'ok', kind: 'primary' },
+    ],
+  });
+  const action = res && res.value;
+  if (!action || action === 'cancel') return;
+
+  if (action === 'unlink') {
+    if (existing) {
+      unwrapElement(existing);
+      markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+      toast('リンクを解除しました', 'info');
+    }
+    return;
+  }
+  const url = safeLinkUrl(res.fields.url);
+  if (!url) { toast('URL を確認してください（http / https / mailto のみ使えます）', 'error'); return; }
+  const text = res.fields.text.trim() || url;
+
+  const a = createFormatElement('link', url);
+  a.textContent = text;
+  if (existing) {
+    existing.replaceWith(a);
+  } else {
+    refs.bodyInput.focus();
+    let range = savedRange;
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(refs.bodyInput);
+      range.collapse(false);
+    }
+    range.deleteContents();
+    range.insertNode(a);
+  }
+  placeCaretAfter(a);
+  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight();
+  toast(existing ? 'リンクを更新しました' : 'リンクを挿入しました', 'success');
+}
+
+function openLinkAt(el) {
+  const url = el && el.getAttribute('href');
+  if (url) window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 /* 書式ツールバーの有効/無効・太字イタリックのアクティブ表示を、現在の
@@ -1579,73 +1848,127 @@ function updateFormatToolbarState() {
   refs.btnItalic.classList.toggle('active', inItalic);
 }
 
-function buildCtxMenu(hasSel) {
+/* 折りたたみセクションの開閉状態（メニューを開き直しても保つ） */
+const ctxOpenSections = new Set();
+function buildCtxMenu(ctx) {
   const now = Date.now();
-  const groups = [
-    { head: '挿入', items: [
-      { act: 'insDate',     icon: 'fa-calendar-day',   label: '日付を挿入',       hint: fmtDate(now) },
-      { act: 'insTime',     icon: 'fa-clock',          label: '時刻を挿入',       hint: fmtTime(now) },
-      { act: 'insDateTime', icon: 'fa-calendar-check', label: '日時を挿入' },
+  const { hasSel, onLink } = ctx;
+  /* 文字色のパレット。「既定」は色指定そのものを外すので、本文の地の色
+     （黒）に正確に戻る。#000000 を当てると地の色とわずかに違う色になる */
+  const COLORS = [
+    { act: 'colorReset',      label: '既定（黒）', swatch: '#243038', reset: true },
+    { act: 'color:#C0392B',   label: '赤',        swatch: '#C0392B' },
+    { act: 'color:#D35400',   label: '橙',        swatch: '#D35400' },
+    { act: 'color:#1E8449',   label: '緑',        swatch: '#1E8449' },
+    { act: 'color:#1F6FB2',   label: '青',        swatch: '#1F6FB2' },
+    { act: 'color:#7D3C98',   label: '紫',        swatch: '#7D3C98' },
+  ];
+  const sections = [
+    { items: [
+      { act: 'clipCut',   icon: 'fa-scissors',      label: '切り取り', keys: 'Ctrl+X', need: true },
+      { act: 'clipCopy',  icon: 'fa-copy',          label: 'コピー',   keys: 'Ctrl+C', need: true },
+      { act: 'clipPaste', icon: 'fa-paste',         label: '貼り付け', keys: 'Ctrl+V' },
+    ]},
+    { head: '書式', items: [
+      { act: 'fmtBold',   icon: 'fa-bold',   label: '太字',   keys: '切替', need: true },
+      { act: 'fmtItalic', icon: 'fa-italic', label: '斜体',   keys: '切替', need: true },
+    ], sizes: [
+      { act: 'size12', label: '小' },
+      { act: 'size15', label: '標準' },
+      { act: 'size19', label: '大' },
+      { act: 'size24', label: '特大' },
+      { act: 'size32', label: '最大' },
+    ], colors: COLORS, after: [
+      { act: 'fmtReset', icon: 'fa-rotate-left', label: '標準に戻す', need: true,
+        title: '黒・標準サイズ・太さ普通に戻します' },
+    ]},
+    { head: 'リンク・画像', items: [
+      { act: 'linkEdit', icon: 'fa-link', label: onLink ? 'リンクを編集…' : 'リンクを挿入…' },
+      ...(onLink ? [
+        { act: 'linkOpen',  icon: 'fa-arrow-up-right-from-square', label: 'リンクを開く' },
+        { act: 'linkUnset', icon: 'fa-link-slash',                 label: 'リンクを解除' },
+      ] : []),
+      { act: 'addImage', icon: 'fa-image', label: '画像を挿入…' },
+    ]},
+    { head: '挿入', collapsible: 'insert', items: [
+      { act: 'insDate',     icon: 'fa-calendar-day',   label: '日付',   hint: fmtDate(now) },
+      { act: 'insTime',     icon: 'fa-clock',          label: '時刻',   hint: fmtTime(now) },
+      { act: 'insDateTime', icon: 'fa-calendar-check', label: '日時' },
       { act: 'insBullet',   icon: 'fa-list-ul',        label: '箇条書き「・」' },
       { act: 'insCheck',    icon: 'fa-square-check',   label: 'チェックボックス' },
       { act: 'insRule',     icon: 'fa-grip-lines',     label: '区切り線' },
     ]},
-    { head: '選択テキスト', items: [
+    { head: '文字の変換', collapsible: 'convert', items: [
       { act: 'wrapKagi',  icon: 'fa-quote-left', label: '「」で囲む' },
       { act: 'wrapParen', icon: 'fa-quote-left', label: '（）で囲む' },
-      { act: 'toHalf',    icon: 'fa-down-left-and-up-right-to-center', label: '全角 → 半角', need: true },
+      { act: 'toHalf',    icon: 'fa-down-left-and-up-right-to-center',   label: '全角 → 半角', need: true },
       { act: 'toFull',    icon: 'fa-up-right-and-down-left-from-center', label: '半角 → 全角', need: true },
       { act: 'count',     icon: 'fa-calculator', label: '文字数を数える', need: true },
     ]},
-    { head: '書式', items: [
-      { act: 'fmtBold',   icon: 'fa-bold',   label: '太字（切替）',  need: true },
-      { act: 'fmtItalic', icon: 'fa-italic', label: '斜体（切替）',  need: true },
-    ], row: {
-      label: '文字サイズ',
-      items: [
-        { act: 'size12', label: '小' },
-        { act: 'size15', label: '標準' },
-        { act: 'size19', label: '大' },
-        { act: 'size24', label: '特大' },
-        { act: 'size32', label: '最大' },
-        { act: 'sizeReset', label: '解除' },
-      ],
-    }},
-    { head: 'その他', items: [
-      { act: 'addImage', icon: 'fa-image', label: '画像を登録…' },
-    ]},
   ];
+
+  const renderItems = list => list.map(it => {
+    const dis = it.need && !hasSel ? ' disabled' : '';
+    return `<button class="ctx-item" data-act="${it.act}"${dis}` +
+      (it.title ? ` title="${esc(it.title)}"` : '') + `>` +
+      `<i class="fa-solid ${it.icon}"></i><span class="ctx-label">${esc(it.label)}</span>` +
+      (it.keys ? `<span class="ctx-keys">${esc(it.keys)}</span>` : '') +
+      (it.hint ? `<span class="ctx-hint mono">${esc(it.hint)}</span>` : '') +
+      `</button>`;
+  }).join('');
+
   let html = '';
-  groups.forEach((g, gi) => {
-    if (gi > 0) html += '<div class="ctx-sep"></div>';
-    html += `<div class="ctx-head">${g.head}</div>`;
-    for (const it of g.items) {
-      const dis = it.need && !hasSel ? ' disabled' : '';
-      html += `<button class="ctx-item" data-act="${it.act}"${dis}>` +
-        `<i class="fa-solid ${it.icon}"></i><span class="ctx-label">${it.label}</span>` +
-        (it.hint ? `<span class="ctx-hint mono">${esc(it.hint)}</span>` : '') +
-        `</button>`;
+  sections.forEach((s, si) => {
+    if (si > 0) html += '<div class="ctx-sep"></div>';
+    /* 使用頻度の低いまとまりは折りたたんでおき、メニュー全体を短く保つ */
+    if (s.collapsible) {
+      const open = ctxOpenSections.has(s.collapsible);
+      html += `<button class="ctx-fold${open ? ' open' : ''}" data-fold="${s.collapsible}">` +
+        `<i class="fa-solid ${open ? 'fa-chevron-down' : 'fa-chevron-right'}"></i>` +
+        `<span>${s.head}</span></button>`;
+      if (!open) return;
+      html += `<div class="ctx-foldbody">${renderItems(s.items)}</div>`;
+      return;
     }
-    /* 文字サイズは選択肢が多く、1項目1行だとメニューが縦に伸びすぎるため
-       横並びの小さなボタン列にまとめる */
-    if (g.row) {
+    if (s.head) html += `<div class="ctx-head">${s.head}</div>`;
+    if (s.items) html += renderItems(s.items);
+    if (s.sizes) {
       const dis = hasSel ? '' : ' disabled';
-      html += `<div class="ctx-row-label">${g.row.label}</div><div class="ctx-row">` +
-        g.row.items.map(it =>
-          `<button class="ctx-size" data-act="${it.act}"${dis}>${it.label}</button>`).join('') +
+      html += `<div class="ctx-row-label">文字サイズ</div><div class="ctx-row">` +
+        s.sizes.map(it => `<button class="ctx-size" data-act="${it.act}"${dis}>${it.label}</button>`).join('') +
         `</div>`;
     }
+    if (s.colors) {
+      const dis = hasSel ? '' : ' disabled';
+      html += `<div class="ctx-row-label">文字色</div><div class="ctx-row ctx-row--colors">` +
+        s.colors.map(c =>
+          `<button class="ctx-swatch${c.reset ? ' is-reset' : ''}" data-act="${c.act}"${dis}` +
+          ` title="${esc(c.label)}" style="--sw:${c.swatch}"></button>`).join('') +
+        `</div>`;
+    }
+    if (s.after) html += renderItems(s.after);
   });
   return html;
 }
 
+let ctxLinkEl = null;   /* メニューを開いた時点のリンク要素 */
 function openCtxMenu(x, y) {
   const sel = window.getSelection();
   const inEditor = sel && sel.rangeCount > 0 && refs.bodyInput.contains(sel.getRangeAt(0).startContainer);
   ctxRange = inEditor ? sel.getRangeAt(0).cloneRange() : null;
+  ctxLinkEl = inEditor ? currentLinkEl() : null;
   const hasSel = !!(inEditor && !sel.isCollapsed && sel.toString().length > 0);
-  refs.ctxMenu.innerHTML = buildCtxMenu(hasSel);
+  renderCtxMenu({ hasSel, onLink: !!ctxLinkEl });
   refs.ctxMenu.hidden = false;
+  positionCtxMenu(x, y);
+}
+/* 折りたたみの開閉でメニューの高さが変わるため、描画と位置決めを分けておく */
+let ctxState = { hasSel: false, onLink: false };
+function renderCtxMenu(state) {
+  if (state) ctxState = state;
+  refs.ctxMenu.innerHTML = buildCtxMenu(ctxState);
+}
+function positionCtxMenu(x, y) {
   const mw = refs.ctxMenu.offsetWidth, mh = refs.ctxMenu.offsetHeight;
   const px = Math.min(x, window.innerWidth - mw - 8);
   const py = Math.min(y, window.innerHeight - mh - 8);
@@ -1680,13 +2003,76 @@ function runCtxAction(act) {
                           el => el.tagName === 'I' || el.tagName === 'EM',
                           () => document.createElement('i'))); break;
     case 'sizeReset':   runCtxFormat(() => clearFormatType('size', '選択範囲に文字サイズは設定されていません')); break;
+    case 'fmtReset':    runCtxFormat(resetFormatToDefault); break;
+    case 'colorReset':  runCtxFormat(() => clearFormatType('color', '選択範囲に文字色は設定されていません')); break;
+    case 'clipCut':     clipboardCut(selText); break;
+    case 'clipCopy':    clipboardCopy(selText); break;
+    case 'clipPaste':   clipboardPaste(); break;
+    case 'linkEdit':    insertOrEditLink(); break;
+    case 'linkOpen':    openLinkAt(ctxLinkEl); break;
+    case 'linkUnset':
+      if (ctxLinkEl) {
+        unwrapElement(ctxLinkEl);
+        markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+        toast('リンクを解除しました', 'info');
+      }
+      break;
     default:
       if (/^size\d+$/.test(act)) {
         const px = act.slice(4);
         runCtxFormat(() => applyInlineFormat(() => createFormatElement('size', px), 'size'));
+      } else if (act.startsWith('color:')) {
+        const hex = act.slice(6);
+        runCtxFormat(() => applyInlineFormat(() => createFormatElement('color', hex), 'color'));
       }
   }
   hideCtxMenu();
+}
+
+/* ============================================================
+   クリップボード（右クリックメニューの 切り取り／コピー／貼り付け）
+   ============================================================ */
+async function clipboardCopy(selText) {
+  if (!selText) { toast('コピーする範囲を選択してください', 'info'); return; }
+  try {
+    await navigator.clipboard.writeText(selText);
+    toast('コピーしました', 'success');
+  } catch {
+    /* 権限が無い環境では execCommand にフォールバックする */
+    if (document.execCommand('copy')) toast('コピーしました', 'success');
+    else toast('コピーできませんでした。Ctrl+C をお使いください', 'error');
+  }
+}
+async function clipboardCut(selText) {
+  if (!selText) { toast('切り取る範囲を選択してください', 'info'); return; }
+  try {
+    await navigator.clipboard.writeText(selText);
+  } catch {
+    if (!document.execCommand('cut')) {
+      toast('切り取れませんでした。Ctrl+X をお使いください', 'error');
+      return;
+    }
+    markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+    toast('切り取りました', 'success');
+    return;
+  }
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0) sel.getRangeAt(0).deleteContents();
+  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight();
+  toast('切り取りました', 'success');
+}
+async function clipboardPaste() {
+  let text = '';
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    /* 読み取りはブラウザの許可が必要。拒否された場合はショートカットを案内する */
+    toast('貼り付けは Ctrl+V をお使いください（ブラウザの制限のため）', 'info');
+    return;
+  }
+  if (!text) { toast('クリップボードに文字がありません', 'info'); return; }
+  insertBodyText(text);
+  rebuildLineMarksDebounced(); updateCursorHighlight();
 }
 
 /* 書式系のアクションは savedBodyRange を参照するため、メニューを開いた時点の
@@ -2586,6 +2972,14 @@ function bindEvents() {
     openInlineImage(wrap);
   });
   refs.bodyInput.addEventListener('click', e => {
+    /* 編集領域内のリンクは、通常クリックではキャレット移動を優先し、
+       Ctrl(⌘)+クリックで開く */
+    const link = e.target.closest('a[data-fmt="link"]');
+    if (link && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      openLinkAt(link);
+      return;
+    }
     const zoomBtn = e.target.closest('.body-img__zoom');
     if (zoomBtn) {
       const wrap = zoomBtn.closest('.body-img');
@@ -2670,7 +3064,18 @@ function bindEvents() {
   });
   refs.ctxMenu.addEventListener('mousedown', e => e.preventDefault());   /* 選択・フォーカス維持 */
   refs.ctxMenu.addEventListener('click', e => {
-    const btn = e.target.closest('.ctx-item, .ctx-size');
+    /* 折りたたみの見出しはメニューを閉じずに開閉だけ切り替える */
+    const fold = e.target.closest('.ctx-fold');
+    if (fold) {
+      const key = fold.dataset.fold;
+      if (ctxOpenSections.has(key)) ctxOpenSections.delete(key);
+      else ctxOpenSections.add(key);
+      const rect = refs.ctxMenu.getBoundingClientRect();
+      renderCtxMenu();
+      positionCtxMenu(rect.left, rect.top);
+      return;
+    }
+    const btn = e.target.closest('.ctx-item, .ctx-size, .ctx-swatch');
     if (!btn || btn.disabled) return;
     runCtxAction(btn.dataset.act);
   });
@@ -2739,7 +3144,7 @@ function bindEvents() {
   refs.btnClearHighlight.addEventListener('mousedown', captureBodySelection);
   refs.btnClearHighlight.addEventListener('click', () => clearFormatType('hl', '選択範囲にハイライトは設定されていません'));
   refs.btnClearFormat.addEventListener('mousedown', captureBodySelection);
-  refs.btnClearFormat.addEventListener('click', clearInlineFormat);
+  refs.btnClearFormat.addEventListener('click', resetFormatToDefault);
 
   /* --- 画像 --- */
   refs.btnAddImage.addEventListener('click', () => refs.fileInput.click());

@@ -8,9 +8,18 @@
    画像：登録・表示・サイズ変更（IndexedDB / Blob 管理）
    ============================================================ */
 const urlMap = new Map();   /* image id -> objectURL */
-function revokeUrls() {
-  for (const u of urlMap.values()) URL.revokeObjectURL(u);
-  urlMap.clear();
+/* keepIds に含まれない画像の objectURL だけを解放する。
+   【重要】まとめて全解放してはいけない。本文（contenteditable）に貼られた
+   <img> は loadImages() では作り直されないため、まだ表示中の URL まで
+   revoke すると、その URL は死んだまま DOM から参照され続け、再読み込みが
+   必要になった時点で画像が壊れる（画像を1枚追加しただけで、すでに本文へ
+   貼ってある画像の URL が無効になっていた）。 */
+function revokeUrls(keepIds = null) {
+  for (const [id, u] of [...urlMap]) {
+    if (keepIds && keepIds.has(id)) continue;
+    URL.revokeObjectURL(u);
+    urlMap.delete(id);
+  }
 }
 function urlOf(img) {
   if (!urlMap.has(img.id)) urlMap.set(img.id, URL.createObjectURL(img.blob));
@@ -18,10 +27,13 @@ function urlOf(img) {
 }
 
 async function loadImages() {
-  revokeUrls();
   state.images = state.currentId === null
     ? []
     : (await Store.byIndex('images', 'memoId', state.currentId)).sort((a, b) => a.id - b.id);
+  /* 表示中のメモに残っている画像の URL は使い回し、別のメモへ移った／
+     削除された画像の URL だけを解放する（画像 id はストア全体で一意なので、
+     メモを切り替えれば前のメモ分はここで確実に解放される） */
+  revokeUrls(new Set(state.images.map(img => img.id)));
   renderImages();
 }
 function renderImages() {
@@ -52,16 +64,24 @@ async function updateImageCount() {
 async function addImageFiles(fileList, sourceName = null) {
   const files = [...fileList].filter(f => f.type.startsWith('image/'));
   if (files.length === 0) { toast('画像ファイルのみ登録できます', 'error'); return; }
-  /* 未保存の新規メモには先にレコードを作成して紐付ける */
+  /* 未保存の新規メモには先にレコードを作成して紐付ける。
+     ここで保存できないと画像の紐付け先が無いので、そのまま中断する */
   if (refs.sheet.hidden) newMemo();
-  if (state.currentId === null) await saveCurrent(true);
+  if (state.currentId === null && !(await saveCurrent(true))) return;
   const now = Date.now();
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    const name = f.name && f.name !== 'image.png'
-      ? f.name
-      : `${sourceName || 'clipboard'}_${fmtDate(now).replaceAll('/','')}_${fmtTime(now).replace(':','')}${files.length > 1 ? '_' + (i+1) : ''}.png`;
-    await Store.add('images', { memoId: state.currentId, name, type: f.type, blob: f, createdAt: now });
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const name = f.name && f.name !== 'image.png'
+        ? f.name
+        : `${sourceName || 'clipboard'}_${fmtDate(now).replaceAll('/','')}_${fmtTime(now).replace(':','')}${files.length > 1 ? '_' + (i+1) : ''}.png`;
+      await Store.add('images', { memoId: state.currentId, name, type: f.type, blob: f, createdAt: now });
+    }
+  } catch (err) {
+    console.error(err);
+    await loadImages();
+    toast('画像を登録できませんでした。保存領域の空き容量を確認してください', 'error');
+    return;
   }
   await loadImages();
   await updateImageCount();
@@ -75,7 +95,13 @@ async function removeImage(id) {
     okLabel: '削除する',
   });
   if (!ok) return;
-  await Store.del('images', id);
+  try {
+    await Store.del('images', id);
+  } catch (err) {
+    console.error(err);
+    toast('画像を削除できませんでした', 'error');
+    return;
+  }
   await loadImages();
   await updateImageCount();
   toast('画像を削除しました', 'success');
@@ -92,10 +118,15 @@ function imgPanelWidthBounds() {
   const max = Math.max(min, Math.min(720, window.innerWidth - 650));
   return { min, max };
 }
-function applyImgPanelWidth() {
+function clampImgPanelWidth(w) {
   const { min, max } = imgPanelWidthBounds();
-  const w = Math.min(Math.max(state.imgPanelWidth, min), max);
-  document.documentElement.style.setProperty('--imgpanel-w', w + 'px');
+  return Math.min(Math.max(w, min), max);
+}
+/* state.imgPanelWidth は「ユーザーが決めた幅」としてそのまま持ち、表示のたびに
+   現在のウィンドウ幅へクランプする。こうしておくと、ウィンドウを一時的に
+   狭めても元の幅に戻したときに希望の幅へ復帰する */
+function applyImgPanelWidth() {
+  document.documentElement.style.setProperty('--imgpanel-w', clampImgPanelWidth(state.imgPanelWidth) + 'px');
 }
 
 /* ============================================================

@@ -6,7 +6,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.4.2';
 
 /* ============================================================
    ユーティリティ
@@ -42,6 +42,22 @@ function countBy(items, keysOf) {
   const counts = new Map();
   for (const item of items) for (const key of keysOf(item)) counts.set(key, (counts.get(key) || 0) + 1);
   return counts;
+}
+/* 非同期処理を直列化する。処理中にもう一度呼ばれても並行実行させず、
+   先行分が終わってから改めて実行する。保存のように「1回目で作られた id を
+   2回目が参照する」処理を並行させると、ボタンの連打やキーリピートで
+   新規レコードが二重に作られてしまうため、その入口で使う */
+function serialized(fn) {
+  let last = null;
+  return (...args) => {
+    const prev = last;
+    const run = (async () => {
+      if (prev) await prev;
+      return fn(...args);
+    })();
+    last = run.catch(() => {});   /* 失敗しても後続を止めない */
+    return run;
+  };
 }
 /* 任意の input / textarea のキャレット位置へ文字列を挿入 */
 function insertAtCaret(el, text, caretOffset = null) {
@@ -180,6 +196,14 @@ function toast(msg, type = 'info') {
   }, 2800);
 }
 
+/* モーダルを開いたボタンをダブルクリックすると、2回目のクリックが直後に
+   現れた背面（オーバーレイ）へ当たり、開いた瞬間に閉じてしまう。開いた直後の
+   ごく短い間だけ背面クリックを無視して、これを防ぐ */
+const MODAL_GRACE_MS = 400;
+const modalOpenedAt = new WeakMap();
+function markModalOpened(el) { modalOpenedAt.set(el, performance.now()); }
+function backdropClickAllowed(el) { return performance.now() - (modalOpenedAt.get(el) || 0) > MODAL_GRACE_MS; }
+
 let dialogResolve = null;
 /* fields を渡すと入力欄付きのダイアログになる。決定時は
    { value: ボタンの値, fields: { name: 入力値 } } を返す */
@@ -230,6 +254,7 @@ function dialog({ title, message, buttons, fields }) {
       btn.addEventListener('click', () => finish(b.value));
       refs.dlgFoot.appendChild(btn);
     }
+    markModalOpened(refs.dialogRoot);
     refs.dialogRoot.hidden = false;
     const firstInput = Object.values(inputs)[0];
     if (firstInput) { firstInput.focus(); firstInput.select(); }

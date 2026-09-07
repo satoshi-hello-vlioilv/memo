@@ -242,6 +242,16 @@ function serializeBody() {
   return result.replace(/\n$/, '');
 }
 
+/* 画面に見えている文字だけの本文。serializeBody() が返すのは保存用の形式で、
+   [b] や [img:1:c:fit] といったマーカーを含むため、そのまま数えると文字数が
+   実際より多くなる（太字にしただけで 5 文字が 12 文字と表示されていた）。
+   マーカーの正規表現は検索側（list.js）と共用する */
+function bodyPlainText() {
+  return serializeBody()
+    .replace(BODY_IMG_MARKER_RE, '')
+    .replace(BODY_FMT_TAG_RE, '');
+}
+
 function deserializeBody(text) {
   refs.bodyInput.innerHTML = '';
   if (text) {
@@ -344,14 +354,27 @@ function endImgDrag() {
 }
 
 function insertBodyText(text, caretAt = null) {
-  refs.bodyInput.focus();
   const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) {
+  /* 【重要】挿入位置の判定は focus() より先に行う。選択がタイトル欄など本文の
+     外に残っている状態で focus() を呼ぶと、キャレットが本文の「先頭」へ移り、
+     そのまま先頭へ挿入されてしまう（音声入力中に他の欄を触ったあとの確定文字
+     が、書きかけの文章の頭に割り込んでいた）。本文内にキャレットが無いときは
+     末尾へ挿入する */
+  const current = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+  const target = current && refs.bodyInput.contains(current.commonAncestorContainer)
+    ? current.cloneRange() : null;
+  refs.bodyInput.focus();
+  if (!sel) {
     refs.bodyInput.appendChild(textToFragment(text));
     afterBodyEdit();
     return;
   }
-  const range = sel.getRangeAt(0);
+  let range = target;
+  if (!range) {
+    range = document.createRange();
+    range.selectNodeContents(refs.bodyInput);
+    range.collapse(false);
+  }
   range.deleteContents();
   const frag = document.createDocumentFragment();
   if (caretAt !== null) {

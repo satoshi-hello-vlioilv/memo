@@ -32,22 +32,31 @@ function fmLoad(id) {
   refs.fmDelete.disabled = !f;
   renderFormatList();
 }
-async function fmSave() {
+/* メモの保存（editor.js）と同じ理由で直列化する。保存ボタンを連打すると、
+   1 回目が id を確定させる前に 2 回目が fm.editingId === null を見てしまい、
+   同じフォーマットが二重に登録される */
+const fmSave = serialized(async function fmSaveFormat() {
   const name = refs.fmName.value.trim();
   if (!name) { toast('フォーマット名を入力してください', 'error'); refs.fmName.focus(); return; }
   const now  = Date.now();
   const tags = parseTags(refs.fmTags.value);
-  if (fm.editingId === null) {
-    const id = await Store.add('formats', { name, tags, content: refs.fmContent.value, createdAt: now, updatedAt: now });
-    fm.editingId = id;
-  } else {
-    const old = await Store.get('formats', fm.editingId);
-    await Store.put('formats', { ...old, name, tags, content: refs.fmContent.value, updatedAt: now });
+  try {
+    if (fm.editingId === null) {
+      const id = await Store.add('formats', { name, tags, content: refs.fmContent.value, createdAt: now, updatedAt: now });
+      fm.editingId = id;
+    } else {
+      const old = await Store.get('formats', fm.editingId);
+      await Store.put('formats', { ...old, name, tags, content: refs.fmContent.value, updatedAt: now });
+    }
+  } catch (err) {
+    console.error(err);
+    toast('フォーマットを保存できませんでした', 'error');
+    return;
   }
   await refreshFormats();
   fmLoad(fm.editingId);
   toast('フォーマットを保存しました', 'success');
-}
+});
 async function fmDelete() {
   if (fm.editingId === null) return;
   const f = state.formats.find(x => x.id === fm.editingId);
@@ -70,6 +79,7 @@ function switchMgmtSection(section) {
   refs.mgmtSectionTags.hidden = isFormats;
 }
 function openManageModal(section) {
+  markModalOpened(refs.manageModal);
   refs.manageModal.hidden = false;
   switchMgmtSection(section);
   if (section === 'formats') {

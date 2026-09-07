@@ -69,7 +69,7 @@ function renderStamps() {
   refs.stampUpdated.textContent = m ? fmtDateTime(m.updatedAt) : '—';
 }
 function renderCharCount() {
-  refs.charCount.textContent = serializeBody().length;
+  refs.charCount.textContent = bodyPlainText().length;
 }
 function renderTagsPreview() {
   refs.tagsPreview.innerHTML = parseTags(refs.tagsInput.value).map(t => tagChip(t)).join('');
@@ -121,23 +121,38 @@ function newMemo() {
   loadImages();
   refs.titleInput.focus();
 }
-async function saveCurrent(silent = false) {
+/* 保存できたら true、失敗したら false を返す（例外は投げない）。
+   呼び出し側は戻り値を見て「保存できていないのに画面を切り替える」ことを
+   避けられる。
+   serialized() で直列化しているのは、新規メモの保存が終わる前に 2 回目の
+   保存が始まると、どちらも state.currentId === null を見て Store.add し、
+   同じメモが二重に作られてしまうため（保存ボタンのダブルクリックや
+   Ctrl+S のキーリピートで実際に起きる）。2 回目は 1 回目の完了を待つので、
+   その時点では id が確定していて更新（put）になる。 */
+const saveCurrent = serialized(async function saveCurrentMemo(silent = false) {
   const now = Date.now();
   const f = collectFields();
-  if (state.currentId === null) {
-    const id = await Store.add('memos', { ...f, createdAt: now, updatedAt: now, imageCount: 0 });
-    state.currentId = id;
-    savePref('lastMemoId', id);
-  } else {
-    const old = await Store.get('memos', state.currentId);
-    await Store.put('memos', { ...old, ...f, updatedAt: now });
+  try {
+    if (state.currentId === null) {
+      const id = await Store.add('memos', { ...f, createdAt: now, updatedAt: now, imageCount: 0 });
+      state.currentId = id;
+      savePref('lastMemoId', id);
+    } else {
+      const old = await Store.get('memos', state.currentId);
+      await Store.put('memos', { ...old, ...f, updatedAt: now });
+    }
+  } catch (err) {
+    console.error(err);
+    toast('メモを保存できませんでした。保存領域の空き容量やブラウザの設定を確認してください', 'error');
+    return false;
   }
   state.dirty = false;
   state.savedAt = now;
   await refreshMemos();
   renderList(); renderStamps(); renderSaveState();
   if (!silent) toast('メモを保存しました', 'success');
-}
+  return true;
+});
 async function deleteCurrent() {
   if (state.currentId === null) {
     const ok = await confirmDialog({
@@ -176,7 +191,9 @@ async function guardDirty() {
       { label: '保存して続行', value: 'save', kind: 'primary' },
     ],
   });
-  if (v === 'save')    { await saveCurrent(true); return true; }
+  /* 保存に失敗したときは true を返さない。編集内容を残したまま
+     画面を切り替えてしまうと、そのまま消えてしまうため */
+  if (v === 'save')    return await saveCurrent(true);
   if (v === 'discard') { state.dirty = false; return true; }
   return false;
 }

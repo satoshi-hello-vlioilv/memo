@@ -133,7 +133,9 @@ function bindEvents() {
   refs.mgmtNavFormats.addEventListener('click', () => switchMgmtSection('formats'));
   refs.mgmtNavTags.addEventListener('click', () => switchMgmtSection('tags'));
   refs.mgmtClose.addEventListener('click', () => { refs.manageModal.hidden = true; });
-  refs.manageModal.addEventListener('click', e => { if (e.target === refs.manageModal) refs.manageModal.hidden = true; });
+  refs.manageModal.addEventListener('click', e => {
+    if (e.target === refs.manageModal && backdropClickAllowed(refs.manageModal)) refs.manageModal.hidden = true;
+  });
 
   /* --- タグ管理 --- */
   refs.tmAdd.addEventListener('click', async () => {
@@ -438,7 +440,10 @@ function bindEvents() {
     const startWidth = refs.imgPanel.getBoundingClientRect().width;
     document.body.classList.add('resizing-imgpanel');
     const onMove = ev => {
-      state.imgPanelWidth = Math.round(startWidth - (ev.clientX - startX));
+      /* 上下限でクランプしてから state へ入れる。生の値のままだと、限界を
+         越えて動かしたときに範囲外の幅（負の値など）がそのまま state へ入り、
+         ドラッグ終了時にその値が設定として保存されてしまう */
+      state.imgPanelWidth = clampImgPanelWidth(Math.round(startWidth - (ev.clientX - startX)));
       applyImgPanelWidth();
     };
     const onUp = () => {
@@ -497,7 +502,7 @@ function bindEvents() {
 
   /* --- ダイアログ背面クリック --- */
   refs.dialogRoot.addEventListener('click', e => {
-    if (e.target === refs.dialogRoot) closeDialog('cancel');
+    if (e.target === refs.dialogRoot && backdropClickAllowed(refs.dialogRoot)) closeDialog('cancel');
   });
 
   /* --- キーボードショートカット --- */
@@ -520,6 +525,7 @@ function bindEvents() {
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
+      if (e.repeat) return;   /* 押しっぱなしのキーリピートで保存を繰り返さない */
       if (!refs.sheet.hidden) saveCurrent();
     }
   });

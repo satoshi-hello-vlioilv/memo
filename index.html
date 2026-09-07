@@ -355,7 +355,20 @@
        なお、シークレットモードでは保存機能が制限される場合があります。</p>
   </div>
 </div>
-<script src="script.js"></script>
+<!-- 役割ごとに分割したスクリプト。ビルド不要のまま file:// でも開けるよう
+     ES モジュールではなく通常の <script> として、依存の順に読み込む。
+     main.js（イベント結線・初期化）は他が出揃ってから最後に置く。 -->
+<script src="js/core.js"></script>
+<script src="js/list.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/body.js"></script>
+<script src="js/text-format.js"></script>
+<script src="js/ctxmenu.js"></script>
+<script src="js/images.js"></script>
+<script src="js/speech.js"></script>
+<script src="js/formats.js"></script>
+<script src="js/data.js"></script>
+<script src="js/main.js"></script>
 
 
 </body></html>

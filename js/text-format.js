@@ -349,12 +349,20 @@ async function insertOrEditLink() {
     savedRange = sel.getRangeAt(0).cloneRange();
   }
   const selText = sel && !sel.isCollapsed ? sel.toString() : '';
+  /* 「表示する文字」は1行の <input> なので、複数行を流し込むと改行が失われる。
+     選択範囲をリンク化する場合や、改行を含むリンクを編集する場合は文字欄を
+     出さず、元の内容（改行や書式を含む）をそのまま活かす */
+  const keepContent = !!selText || (existing && /\n/.test(existing.textContent));
   const res = await dialog({
     title: existing ? 'リンクを編集' : 'リンクを挿入',
-    message: 'スキームを省略した場合は https:// を補います。メールアドレスは mailto: になります。',
+    message: keepContent
+      ? '選択中の文字にリンクを設定します。スキームを省略した場合は https:// を補います。'
+      : 'スキームを省略した場合は https:// を補います。メールアドレスは mailto: になります。',
     fields: [
       { name: 'url',  label: 'URL', value: existing ? existing.getAttribute('href') : '', placeholder: 'example.com/page' },
-      { name: 'text', label: '表示する文字', value: existing ? existing.textContent : selText, placeholder: 'リンクの文字' },
+      ...(keepContent ? [] : [
+        { name: 'text', label: '表示する文字', value: existing ? existing.textContent : '', placeholder: 'リンクの文字' },
+      ]),
     ],
     buttons: [
       { label: 'キャンセル', value: 'cancel' },
@@ -375,8 +383,29 @@ async function insertOrEditLink() {
   }
   const url = safeLinkUrl(res.fields.url);
   if (!url) { toast('URL を確認してください（http / https / mailto のみ使えます）', 'error'); return; }
-  const text = res.fields.text.trim() || url;
 
+  if (keepContent) {
+    /* 中身には触れず、リンクの設定だけを行う。改行や中の書式はそのまま保たれる */
+    if (existing) {
+      existing.setAttribute('href', url);
+      existing.title = `${url}\nCtrl+クリック（Mac は ⌘+クリック）で開きます`;
+    } else {
+      refs.bodyInput.focus();
+      if (savedRange) {
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(savedRange);
+        savedBodyRange = savedRange.cloneRange();
+      }
+      /* テキストノード単位で包むので、行構造(<div>/<br>)を壊さない */
+      applyInlineFormat(() => createFormatElement('link', url), 'link');
+    }
+    afterBodyEdit();
+    toast(existing ? 'リンクを更新しました' : 'リンクを設定しました', 'success');
+    return;
+  }
+
+  const text = (res.fields.text || '').trim() || url;
   const a = createFormatElement('link', url);
   a.textContent = text;
   if (existing) {

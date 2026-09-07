@@ -31,6 +31,14 @@ const parseTags = raw => {
     seen.add(t); return true;
   });
 };
+/* タグチップの HTML。一覧・プレビュー・タグ管理で見た目を揃える */
+const tagChip = (name, cls = 'chip chip-s') => `<span class="${cls} ${tagClass(name)}">${esc(name)}</span>`;
+/* キーごとの件数を数える共通ヘルパー（タグバー・目印バー・サジェストで共用） */
+function countBy(items, keysOf) {
+  const counts = new Map();
+  for (const item of items) for (const key of keysOf(item)) counts.set(key, (counts.get(key) || 0) + 1);
+  return counts;
+}
 /* 任意の input / textarea のキャレット位置へ文字列を挿入 */
 function insertAtCaret(el, text, caretOffset = null) {
   const start = el.selectionStart ?? el.value.length;
@@ -105,6 +113,9 @@ const MEMO_MARKS = [
   { id: 'alert', icon: 'fa-triangle-exclamation', label: '注意' },
 ];
 const markById = id => MEMO_MARKS.find(m => m.id === id) || null;
+/* 一覧で使う集計。目印は保存データに残った未知の id を無視する */
+const countTags  = memos => countBy(memos, m => m.tags || []);
+const countMarks = memos => countBy(memos, m => (m.mark && markById(m.mark)) ? [m.mark] : []);
 
 const state = {
   memos: [], formats: [], images: [], tagsMaster: [],
@@ -226,6 +237,17 @@ function closeDialog(value) {
   refs.dlgMsg.parentElement.querySelector('.dlg-fields')?.remove();
   if (dialogResolve) { dialogResolve(value); dialogResolve = null; }
 }
+/* 「キャンセル / 実行」の二択ダイアログ。実行が選ばれたときだけ true を返す */
+async function confirmDialog({ title, message, okLabel, kind = 'danger' }) {
+  const v = await dialog({
+    title, message,
+    buttons: [
+      { label: 'キャンセル', value: 'cancel' },
+      { label: okLabel, value: 'ok', kind },
+    ],
+  });
+  return v === 'ok';
+}
 
 /* ============================================================
    設定の永続化（IndexedDB prefs ストア）
@@ -270,12 +292,11 @@ async function refreshTagsMaster() {
   renderTagMasterList();
 }
 function renderTagMasterList() {
-  const counts = new Map();
-  for (const m of state.memos) for (const t of (m.tags || [])) counts.set(t, (counts.get(t) || 0) + 1);
+  const counts = countTags(state.memos);
   refs.tmEmpty.hidden = state.tagsMaster.length > 0;
   refs.tmList.innerHTML = state.tagsMaster.map(t => `
     <li class="tag-mgmt-item">
-      <span class="chip ${tagClass(t)}">${esc(t)}</span>
+      ${tagChip(t, 'chip')}
       <span class="tmi-spacer"></span>
       <span class="tmi-count mono">${counts.get(t) || 0} 件</span>
       <button class="icon-btn btn-danger-ghost tm-del" data-tag="${esc(t)}" title="削除"><i class="fa-solid fa-trash-can"></i></button>
@@ -384,11 +405,9 @@ function computeSearchSuggestions(query) {
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, 5);
 
-    const tagCounts = new Map();
-    for (const m of state.memos) for (const t of (m.tags || [])) {
-      if (t.toLowerCase().includes(q)) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
-    }
-    tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 5);
+    tags = [...countTags(state.memos)]
+      .filter(([t]) => t.toLowerCase().includes(q))
+      .sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 5);
   }
   return { history, memos, tags };
 }
@@ -452,8 +471,7 @@ function renderMemoItem(m, peek = false) {
   const dts     = state.groupByDate ? (m[state.groupDateField] ?? m.updatedAt) : m.updatedAt;
   const date    = isToday(dts) ? fmtTime(dts) : fmtDate(dts);
   const snippet = makeSnippet(m.body, state.query, state.searchScope.body);
-  const tags    = (m.tags || []).slice(0, 3).map(t =>
-    `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
+  const tags    = (m.tags || []).slice(0, 3).map(t => tagChip(t)).join('');
   const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';
   const imgs    = m.imageCount > 0
     ? `<span class="mi-imgs"><i class="fa-regular fa-image"></i>${m.imageCount}</span>` : '';
@@ -522,10 +540,7 @@ function renderList() {
         ? `<span class="date-group-imgs"><i class="fa-regular fa-image"></i>${imgTotal}</span>` : '';
       /* 画像バッジと同じように、そのグループに含まれる目印も見出しへ集約して
          表示する。折りたたんでいても、どの目印がその日に付いているかが分かる */
-      const markCounts = new Map();
-      for (const m of memos) {
-        if (m.mark && markById(m.mark)) markCounts.set(m.mark, (markCounts.get(m.mark) || 0) + 1);
-      }
+      const markCounts = countMarks(memos);
       const markBadges = MEMO_MARKS.filter(mk => markCounts.has(mk.id)).map(mk => {
         const n = markCounts.get(mk.id);
         return `<span class="date-group-mark" title="${esc(mk.label)} ${n} 件">` +
@@ -557,10 +572,7 @@ function renderList() {
 /* 実際に使われている目印だけを絞り込みチップとして並べる。1件も無ければ
    バー自体を空にして場所を取らない(.markbar:empty で非表示) */
 function renderMarkBar() {
-  const counts = new Map();
-  for (const m of state.memos) {
-    if (m.mark && markById(m.mark)) counts.set(m.mark, (counts.get(m.mark) || 0) + 1);
-  }
+  const counts = countMarks(state.memos);
   refs.markBar.innerHTML = MEMO_MARKS.filter(mk => counts.has(mk.id)).map(mk =>
     `<button class="mark-chip ${state.markFilter === mk.id ? 'active' : ''}" data-mark="${mk.id}"
        title="「${esc(mk.label)}」の目印が付いたメモだけを表示">
@@ -568,11 +580,7 @@ function renderMarkBar() {
        <span class="cnt">${counts.get(mk.id)}</span></button>`).join('');
 }
 function renderTagBar() {
-  const counts = new Map();
-  for (const m of state.memos) for (const t of (m.tags || [])) {
-    counts.set(t, (counts.get(t) || 0) + 1);
-  }
-  const tags = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'));
+  const tags = [...countTags(state.memos)].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'));
   refs.tagBar.innerHTML = tags.map(([t, n]) =>
     `<button class="chip ${state.tagFilter === t ? 'active' : ''}" data-tag="${esc(t)}">
        ${esc(t)}<span class="cnt">${n}</span></button>`).join('');
@@ -646,8 +654,23 @@ function renderCharCount() {
   refs.charCount.textContent = serializeBody().length;
 }
 function renderTagsPreview() {
-  refs.tagsPreview.innerHTML = parseTags(refs.tagsInput.value)
-    .map(t => `<span class="chip chip-s ${tagClass(t)}">${esc(t)}</span>`).join('');
+  refs.tagsPreview.innerHTML = parseTags(refs.tagsInput.value).map(t => tagChip(t)).join('');
+}
+/* 編集画面のヘッダまわり（日時・保存状態・タグ・目印）をまとめて描き直す */
+function renderEditorMeta() {
+  renderStamps(); renderSaveState(); renderTagsPreview(); renderMarkPicker();
+}
+/* 本文を書き換えたあとの共通後処理。以前は呼び出し側ごとにこの並びを手で
+   書いていたため、例えばフォーマット適用では改行マークが更新されないなど、
+   処理の抜けが場所によってまちまちだった。ここに集約して常に同じ状態へ
+   揃える。いずれも現在の DOM を読み直して表示を作り直すだけなので、
+   余分に呼んでも副作用は無い */
+function afterBodyEdit() {
+  markDirty();
+  renderCharCount();
+  rebuildLineMarksDebounced();
+  updateCursorHighlight();
+  updateFormatToolbarState();
 }
 
 async function openMemo(id) {
@@ -660,7 +683,7 @@ async function openMemo(id) {
   refs.titleInput.value = m.title || '';
   refs.tagsInput.value  = (m.tags || []).join(', ');
   showSheet();
-  renderStamps(); renderSaveState(); renderTagsPreview(); renderMarkPicker(); renderList();
+  renderEditorMeta(); renderList();
   await loadImages();
   deserializeBody(m.body || '');
   renderCharCount();
@@ -676,7 +699,7 @@ function newMemo() {
   refs.bodyInput.innerHTML = '';
   rebuildLineMarks();
   showSheet();
-  renderStamps(); renderSaveState(); renderCharCount(); renderTagsPreview(); renderMarkPicker(); renderList();
+  renderEditorMeta(); renderCharCount(); renderList();
   loadImages();
   refs.titleInput.focus();
 }
@@ -699,28 +722,22 @@ async function saveCurrent(silent = false) {
 }
 async function deleteCurrent() {
   if (state.currentId === null) {
-    const v = await dialog({
+    const ok = await confirmDialog({
       title: 'メモの破棄',
       message: 'このメモはまだ保存されていません。入力内容を破棄しますか？',
-      buttons: [
-        { label: 'キャンセル', value: 'cancel' },
-        { label: '破棄する', value: 'ok', kind: 'danger' },
-      ],
+      okLabel: '破棄する',
     });
-    if (v === 'ok') showWelcome();
+    if (ok) showWelcome();
     return;
   }
   const m = state.memos.find(x => x.id === state.currentId);
   const imgNote = (m?.imageCount || 0) > 0 ? `\n登録済みの画像 ${m.imageCount} 件も同時に削除されます。` : '';
-  const v = await dialog({
+  const ok = await confirmDialog({
     title: 'メモの削除',
     message: `「${m?.title || '無題のメモ'}」を削除します。この操作は取り消せません。${imgNote}`,
-    buttons: [
-      { label: 'キャンセル', value: 'cancel' },
-      { label: '削除する', value: 'ok', kind: 'danger' },
-    ],
+    okLabel: '削除する',
   });
-  if (v !== 'ok') return;
+  if (!ok) return;
   const imgs = await Store.byIndex('images', 'memoId', state.currentId);
   for (const img of imgs) await Store.del('images', img.id);
   await Store.del('memos', state.currentId);
@@ -809,6 +826,12 @@ function createInlineImg(imgId, align, size) {
   }
   return wrap;
 }
+
+/* 改行マークとカーソル行ハイライトは本文の中身ではなく表示専用の
+   オーバーレイ。保存・末尾判定・書式適用の対象から外すために使う */
+const OVERLAY_SELECTOR = '.line-mark, .current-line-hl';
+const isOverlayEl = node => node.nodeType === Node.ELEMENT_NODE && !!node.classList &&
+  (node.classList.contains('line-mark') || node.classList.contains('current-line-hl'));
 
 function addTextWithBreaks(parent, text) {
   const lines = text.split('\n');
@@ -949,7 +972,7 @@ function serializeBody() {
       result += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const fmt = node.dataset && node.dataset.fmt;
-      if (node.classList && (node.classList.contains('line-mark') || node.classList.contains('current-line-hl'))) {
+      if (isOverlayEl(node)) {
         return; /* 表示専用のオーバーレイ要素(改行マーク・現在行ハイライト)は読み飛ばす */
       } else if (node.classList && node.classList.contains('body-img')) {
         result += `[img:${node.dataset.id}:${node.dataset.align || 'c'}:${node.dataset.size || 'fit'}]`;
@@ -1016,10 +1039,7 @@ function ensureTrailingEditable() {
   /* 改行マーク・カーソルハイライトは表示専用オーバーレイのため、
      末尾判定の対象からは読み飛ばす */
   let last = refs.bodyInput.lastChild;
-  while (last && last.nodeType === Node.ELEMENT_NODE && last.classList &&
-         (last.classList.contains('line-mark') || last.classList.contains('current-line-hl'))) {
-    last = last.previousSibling;
-  }
+  while (last && isOverlayEl(last)) last = last.previousSibling;
   if (last && last.nodeType === Node.ELEMENT_NODE &&
       last.classList && last.classList.contains('body-img')) {
     refs.bodyInput.appendChild(document.createElement('br'));
@@ -1098,7 +1118,7 @@ function insertBodyText(text, caretAt = null) {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) {
     refs.bodyInput.appendChild(textToFragment(text));
-    markDirty(); renderCharCount();
+    afterBodyEdit();
     return;
   }
   const range = sel.getRangeAt(0);
@@ -1127,7 +1147,7 @@ function insertBodyText(text, caretAt = null) {
       sel.addRange(nr);
     }
   }
-  markDirty(); renderCharCount();
+  afterBodyEdit();
 }
 
 function insertImageRef(imgId) {
@@ -1146,7 +1166,7 @@ function insertImageRef(imgId) {
   range.insertNode(imgEl);
   ensureTrailingEditable();
   placeCaretAfter(imgEl);
-  markDirty(); renderCharCount();
+  afterBodyEdit();
 }
 
 /* 本文内画像をライトボックスで拡大表示（パネルと同じビューワを共用） */
@@ -1182,7 +1202,7 @@ function startImageResize(wrap, startEvent) {
       if (customOpt) customOpt.textContent = customSizeLabel(finalPx);
       sel.value = 'custom';
     }
-    markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+    afterBodyEdit();
   };
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onUp);
@@ -1266,7 +1286,7 @@ function rebuildLineMarks() {
      テキストノード内の "\n" 文字として挿入される場合がある。これを拾わないと
      Shift+Enter の改行だけマークが表示されない */
   const walker = document.createTreeWalker(refs.bodyInput, NodeFilter.SHOW_TEXT, {
-    acceptNode: n => (n.parentElement && n.parentElement.closest('.line-mark, .current-line-hl'))
+    acceptNode: n => (n.parentElement && n.parentElement.closest(OVERLAY_SELECTOR))
       ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
   let tn;
@@ -1390,7 +1410,7 @@ function replaceSelection(newText) {
   nr.selectNodeContents(node);
   sel.removeAllRanges();
   sel.addRange(nr);
-  markDirty(); renderCharCount();
+  afterBodyEdit();
 }
 
 /* ============================================================
@@ -1422,6 +1442,36 @@ function restoreBodySelection() {
   try { sel.addRange(savedBodyRange); } catch { return false; }
   return true;
 }
+/* 選択範囲を差し替える */
+function selectRange(range) {
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+/* 選択範囲を差し替え、続けてツールバーを操作しても同じ範囲に効くよう
+   退避値も更新する（書式適用の締めくくりで使う） */
+function setBodySelection(range) {
+  selectRange(range);
+  savedBodyRange = range.cloneRange();
+}
+/* 書式アクションの共通前処理。退避した選択範囲を復元したうえで、書式を
+   当てられるテキストが実際に含まれているかまで確かめ、駄目なら案内を出して
+   null を返す */
+function requireBodySelection(message) {
+  if (!restoreBodySelection()) { toast(message, 'info'); return null; }
+  const range = window.getSelection().getRangeAt(0);
+  if (getSelectedTextNodesInRange(range).length === 0) { toast(message, 'info'); return null; }
+  return range;
+}
+/* node から本文エディタまでの祖先を辿り、predicate に一致する最も近い要素を返す */
+function closestFormatEl(node, predicate) {
+  let el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
+  while (el && el !== refs.bodyInput) {
+    if (predicate(el)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
 
 /* range と交差する、書式適用対象のテキストノードを出現順に列挙する。
    選択範囲がインライン画像や表示専用オーバーレイをまたぐ場合(全選択など)、
@@ -1440,7 +1490,7 @@ function getSelectedTextNodesInRange(range) {
          解除（トグルOFF）が効かなくなるため除外する */
       if (node.textContent.length === 0) return NodeFilter.FILTER_REJECT;
       const p = node.parentElement;
-      if (p && p.closest('.body-img, .line-mark, .current-line-hl')) return NodeFilter.FILTER_REJECT;
+      if (p && p.closest(`.body-img, ${OVERLAY_SELECTOR}`)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -1473,7 +1523,12 @@ function unwrapElement(el) {
   while (el.firstChild) parent.insertBefore(el.firstChild, el);
   parent.removeChild(el);
 }
-const isAnyFormatEl = el => el.tagName === 'B' || el.tagName === 'STRONG' || el.tagName === 'I' || el.tagName === 'EM' || (el.dataset && el.dataset.fmt);
+/* 書式要素の判定。ブラウザは contenteditable の操作で <b>/<strong>、
+   <i>/<em> のどちらを作ることもあるため、両方を同じ書式として扱う */
+const isBoldEl      = el => el.tagName === 'B' || el.tagName === 'STRONG';
+const isItalicEl    = el => el.tagName === 'I' || el.tagName === 'EM';
+const isLinkEl      = el => el.tagName === 'A' && !!(el.dataset && el.dataset.fmt === 'link');
+const isAnyFormatEl = el => isBoldEl(el) || isItalicEl(el) || !!(el.dataset && el.dataset.fmt);
 const isFmtType = type => el => !!(el.dataset && el.dataset.fmt === type);
 
 /* 分割・解除の結果、中身が空になった書式要素を取り除く。残しておくと
@@ -1568,34 +1623,14 @@ function clearFormatInRange(range, predicate) {
   return r;
 }
 
-/* 選択範囲に含まれる各テキストノードを個別に makeEl() の要素で包む。
+/* 選択範囲に含まれる各テキストノードを個別に makeEl() の要素で包み、包んだ
+   全体を指す Range を返す（包む対象が無ければ null）。
    単一の要素で選択範囲全体を包もうとすると(Range.surroundContents)、
    複数行(複数の <div>)にまたがる選択で例外になるため、テキストノード単位で
    処理することで行構造を壊さずに書式を適用できるようにしている。
-
-   fmtType を渡した場合(文字サイズ・文字色・ハイライトのような「値を持つ」
-   書式)は、包む前に選択範囲から同じ種類の書式を取り除く。こうしないと
-   適用のたびにラッパーが入れ子で積み重なり、見た目は新しい値で上書きされて
-   いても外側の古いラッパー(例: 大きいフォントサイズ)が行の高さなどに影響し
-   続け、値を戻しても元に戻らない状態になる */
-function applyInlineFormat(makeEl, fmtType) {
-  if (!restoreBodySelection()) { toast('書式を適用するテキストを選択してください', 'info'); return; }
-  const sel = window.getSelection();
-  let range = sel.getRangeAt(0);
-  if (getSelectedTextNodesInRange(range).length === 0) {
-    toast('書式を適用するテキストを選択してください', 'info'); return;
-  }
-  /* 同種の書式を先に剥がしてから包み直す（入れ子の蓄積を防ぐ） */
-  if (fmtType) {
-    const cleared = clearFormatInRange(range, isFmtType(fmtType));
-    if (cleared) {
-      range = cleared;
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-  }
-  const textNodes = getSelectedTextNodesInRange(range);
-  if (textNodes.length === 0) { toast('書式を適用するテキストを選択してください', 'info'); return; }
+   skip() が true を返したノードは（すでに同じ書式が効いているので）包まずに
+   そのまま結果の範囲へ含める＝入れ子の二重適用を防ぐ */
+function wrapTextNodes(range, textNodes, makeEl, skip = null) {
   /* extractContents/insertNode で先に処理したノードが Range の境界を
      書き換えてしまう(DOM の仕様上の自動調整)前に、境界点を固定値として控えておく */
   const startContainer = range.startContainer, startOffset = range.startOffset;
@@ -1607,13 +1642,13 @@ function applyInlineFormat(makeEl, fmtType) {
     if (node === startContainer) nodeRange.setStart(node, startOffset);
     if (node === endContainer) nodeRange.setEnd(node, endOffset);
     if (nodeRange.collapsed) continue;
-    const extracted = nodeRange.extractContents();
+    if (skip && skip(node)) { wrapped.push(node); continue; }
     const el = makeEl();
-    el.appendChild(extracted);
+    el.appendChild(nodeRange.extractContents());
     nodeRange.insertNode(el);
     wrapped.push(el);
   }
-  if (wrapped.length === 0) return;
+  if (wrapped.length === 0) return null;
   /* 選択の境界は実テキストノード基準にする。setStartBefore/setEndAfter の
      ような要素基準の境界は、折りたたんだ Range の getClientRects() が
      空配列を返すことがあり(文字境界でない collapsed Range の既知の癖)、
@@ -1629,118 +1664,77 @@ function applyInlineFormat(makeEl, fmtType) {
     newRange.setStartBefore(wrapped[0]);
     newRange.setEndAfter(wrapped[wrapped.length - 1]);
   }
-  sel.removeAllRanges();
-  sel.addRange(newRange);
-  savedBodyRange = newRange.cloneRange();
-  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+  return newRange;
+}
+
+/* fmtType を渡した場合(文字サイズ・文字色・ハイライトのような「値を持つ」
+   書式)は、包む前に選択範囲から同じ種類の書式を取り除く。こうしないと
+   適用のたびにラッパーが入れ子で積み重なり、見た目は新しい値で上書きされて
+   いても外側の古いラッパー(例: 大きいフォントサイズ)が行の高さなどに影響し
+   続け、値を戻しても元に戻らない状態になる */
+function applyInlineFormat(makeEl, fmtType) {
+  let range = requireBodySelection('書式を適用するテキストを選択してください');
+  if (!range) return;
+  /* 同種の書式を先に剥がしてから包み直す（入れ子の蓄積を防ぐ） */
+  if (fmtType) {
+    const cleared = clearFormatInRange(range, isFmtType(fmtType));
+    if (cleared) { range = cleared; selectRange(range); }
+  }
+  const textNodes = getSelectedTextNodesInRange(range);
+  if (textNodes.length === 0) { toast('書式を適用するテキストを選択してください', 'info'); return; }
+  const newRange = wrapTextNodes(range, textNodes, makeEl);
+  if (!newRange) return;
+  setBodySelection(newRange);
+  afterBodyEdit();
 }
 
 /* 太字・斜体用のトグル。選択範囲が(部分的にでも)未適用のテキストを含んでいれば
    全体に適用し、選択範囲がすでに全て適用済みなら解除する。既に適用済みの部分は
    二重に包まない(入れ子の蓄積を防ぐ) */
 function toggleTagFormat(matchTag, makeEl) {
-  if (!restoreBodySelection()) { toast('書式を適用するテキストを選択してください', 'info'); return; }
-  const sel = window.getSelection();
-  const range = sel.getRangeAt(0);
+  const range = requireBodySelection('書式を適用するテキストを選択してください');
+  if (!range) return;
   const textNodes = getSelectedTextNodesInRange(range);
-  if (textNodes.length === 0) { toast('書式を適用するテキストを選択してください', 'info'); return; }
-  const hasAncestor = node => {
-    let el = node.parentElement;
-    while (el && el !== refs.bodyInput) {
-      if (matchTag(el)) return true;
-      el = el.parentElement;
-    }
-    return false;
-  };
+  const hasAncestor = node => !!closestFormatEl(node, matchTag);
   /* 選択範囲がすべて適用済みなら解除する。選択した文字だけに効かせるため、
      要素を丸ごとアンラップせず範囲単位で剥がす */
   if (textNodes.every(hasAncestor)) {
     const cleared = clearFormatInRange(range, matchTag);
-    if (cleared) {
-      sel.removeAllRanges();
-      sel.addRange(cleared);
-      savedBodyRange = cleared.cloneRange();
-    }
-    markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+    if (cleared) setBodySelection(cleared);
+    afterBodyEdit();
     return;
   }
-  const startContainer = range.startContainer, startOffset = range.startOffset;
-  const endContainer = range.endContainer, endOffset = range.endOffset;
-  const wrapped = [];
-  for (const node of textNodes) {
-    const nodeRange = document.createRange();
-    nodeRange.selectNodeContents(node);
-    if (node === startContainer) nodeRange.setStart(node, startOffset);
-    if (node === endContainer) nodeRange.setEnd(node, endOffset);
-    if (nodeRange.collapsed) continue;
-    if (hasAncestor(node)) { wrapped.push(node); continue; }
-    const extracted = nodeRange.extractContents();
-    const el = makeEl();
-    el.appendChild(extracted);
-    nodeRange.insertNode(el);
-    wrapped.push(el);
-  }
-  if (wrapped.length === 0) return;
-  const newRange = document.createRange();
-  const startText = firstTextNode(wrapped[0]);
-  const endText = lastTextNode(wrapped[wrapped.length - 1]);
-  if (startText && endText) {
-    newRange.setStart(startText, 0);
-    newRange.setEnd(endText, endText.textContent.length);
-  } else {
-    newRange.setStartBefore(wrapped[0]);
-    newRange.setEndAfter(wrapped[wrapped.length - 1]);
-  }
-  sel.removeAllRanges();
-  sel.addRange(newRange);
-  savedBodyRange = newRange.cloneRange();
-  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+  const newRange = wrapTextNodes(range, textNodes, makeEl, hasAncestor);
+  if (!newRange) return;
+  setBodySelection(newRange);
+  afterBodyEdit();
 }
 
 /* 選択した文字だけから、predicate に一致する書式を解除する。
    選択範囲が書式要素の一部でも、その範囲だけを正確に解除する */
 function clearFormatMatching(predicate, emptyMessage) {
   if (!restoreBodySelection()) { toast('書式を解除するテキストを選択してください', 'info'); return; }
-  const sel = window.getSelection();
-  const range = sel.getRangeAt(0);
+  const range = window.getSelection().getRangeAt(0);
   const textNodes = getSelectedTextNodesInRange(range);
-  const hasTarget = textNodes.some(node => {
-    let el = node.parentElement;
-    while (el && el !== refs.bodyInput) {
-      if (predicate(el)) return true;
-      el = el.parentElement;
-    }
-    return false;
-  });
-  if (!hasTarget) { toast(emptyMessage, 'info'); return; }
+  if (!textNodes.some(node => closestFormatEl(node, predicate))) { toast(emptyMessage, 'info'); return; }
   const cleared = clearFormatInRange(range, predicate);
-  if (cleared) {
-    sel.removeAllRanges();
-    sel.addRange(cleared);
-    savedBodyRange = cleared.cloneRange();
-  }
-  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+  if (cleared) setBodySelection(cleared);
+  afterBodyEdit();
 }
 function clearFormatType(fmtType, emptyMessage) {
   clearFormatMatching(isFmtType(fmtType), emptyMessage);
 }
+const toggleBold   = () => toggleTagFormat(isBoldEl,   () => document.createElement('b'));
+const toggleItalic = () => toggleTagFormat(isItalicEl, () => document.createElement('i'));
 /* 選択範囲を既定の書式（黒・標準サイズ・太さ普通）に戻す。
    本文エディタの地の書式がそのまま既定値なので、インライン書式を
    すべて取り除けば既定に戻る */
 function resetFormatToDefault() {
-  if (!restoreBodySelection()) { toast('標準に戻すテキストを選択してください', 'info'); return; }
-  const sel = window.getSelection();
-  const range = sel.getRangeAt(0);
-  if (getSelectedTextNodesInRange(range).length === 0) {
-    toast('標準に戻すテキストを選択してください', 'info'); return;
-  }
+  const range = requireBodySelection('標準に戻すテキストを選択してください');
+  if (!range) return;
   const cleared = clearFormatInRange(range, isAnyFormatEl);
-  if (cleared) {
-    sel.removeAllRanges();
-    sel.addRange(cleared);
-    savedBodyRange = cleared.cloneRange();
-  }
-  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); updateFormatToolbarState();
+  if (cleared) setBodySelection(cleared);
+  afterBodyEdit();
   toast('標準の書式（黒・標準サイズ・太さ普通）に戻しました', 'success');
 }
 
@@ -1751,13 +1745,7 @@ function resetFormatToDefault() {
 function currentLinkEl() {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return null;
-  const node = sel.getRangeAt(0).startContainer;
-  let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-  while (el && el !== refs.bodyInput) {
-    if (el.tagName === 'A' && el.dataset && el.dataset.fmt === 'link') return el;
-    el = el.parentElement;
-  }
-  return null;
+  return closestFormatEl(sel.getRangeAt(0).startContainer, isLinkEl);
 }
 
 async function insertOrEditLink() {
@@ -1789,7 +1777,7 @@ async function insertOrEditLink() {
   if (action === 'unlink') {
     if (existing) {
       unwrapElement(existing);
-      markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+      afterBodyEdit();
       toast('リンクを解除しました', 'info');
     }
     return;
@@ -1814,7 +1802,7 @@ async function insertOrEditLink() {
     range.insertNode(a);
   }
   placeCaretAfter(a);
-  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight();
+  afterBodyEdit();
   toast(existing ? 'リンクを更新しました' : 'リンクを挿入しました', 'success');
 }
 
@@ -1834,18 +1822,8 @@ function updateFormatToolbarState() {
   const sel = window.getSelection();
   const focused = document.activeElement === refs.bodyInput && sel && sel.rangeCount > 0 &&
     refs.bodyInput.contains(sel.getRangeAt(0).commonAncestorContainer);
-  let inBold = false, inItalic = false;
-  if (focused) {
-    const node = sel.anchorNode;
-    let el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
-    while (el && el !== refs.bodyInput) {
-      if (el.tagName === 'B' || el.tagName === 'STRONG') inBold = true;
-      if (el.tagName === 'I' || el.tagName === 'EM') inItalic = true;
-      el = el.parentElement;
-    }
-  }
-  refs.btnBold.classList.toggle('active', inBold);
-  refs.btnItalic.classList.toggle('active', inItalic);
+  refs.btnBold.classList.toggle('active', focused && !!closestFormatEl(sel.anchorNode, isBoldEl));
+  refs.btnItalic.classList.toggle('active', focused && !!closestFormatEl(sel.anchorNode, isItalicEl));
 }
 
 /* 折りたたみセクションの開閉状態（メニューを開き直しても保つ） */
@@ -1962,10 +1940,11 @@ function openCtxMenu(x, y) {
   refs.ctxMenu.hidden = false;
   positionCtxMenu(x, y);
 }
-/* 折りたたみの開閉でメニューの高さが変わるため、描画と位置決めを分けておく */
+/* 折りたたみの開閉でメニューの高さが変わるため、描画と位置決めを分けておく。
+   引数を省略すると直前の状態のまま描き直す（折りたたみのトグル用） */
 let ctxState = { hasSel: false, onLink: false };
-function renderCtxMenu(state) {
-  if (state) ctxState = state;
+function renderCtxMenu(next) {
+  if (next) ctxState = next;
   refs.ctxMenu.innerHTML = buildCtxMenu(ctxState);
 }
 function positionCtxMenu(x, y) {
@@ -1996,13 +1975,8 @@ function runCtxAction(act) {
     case 'toFull':      if (selText) replaceSelection(toFullWidth(selText)); break;
     case 'count':       toast(`選択中の文字数：${selText.length} 文字`, 'info'); break;
     case 'addImage':    refs.fileInput.click(); break;
-    case 'fmtBold':     runCtxFormat(() => toggleTagFormat(
-                          el => el.tagName === 'B' || el.tagName === 'STRONG',
-                          () => document.createElement('b'))); break;
-    case 'fmtItalic':   runCtxFormat(() => toggleTagFormat(
-                          el => el.tagName === 'I' || el.tagName === 'EM',
-                          () => document.createElement('i'))); break;
-    case 'sizeReset':   runCtxFormat(() => clearFormatType('size', '選択範囲に文字サイズは設定されていません')); break;
+    case 'fmtBold':     runCtxFormat(toggleBold); break;
+    case 'fmtItalic':   runCtxFormat(toggleItalic); break;
     case 'fmtReset':    runCtxFormat(resetFormatToDefault); break;
     case 'colorReset':  runCtxFormat(() => clearFormatType('color', '選択範囲に文字色は設定されていません')); break;
     case 'clipCut':     clipboardCut(selText); break;
@@ -2013,7 +1987,7 @@ function runCtxAction(act) {
     case 'linkUnset':
       if (ctxLinkEl) {
         unwrapElement(ctxLinkEl);
-        markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+        afterBodyEdit();
         toast('リンクを解除しました', 'info');
       }
       break;
@@ -2052,13 +2026,13 @@ async function clipboardCut(selText) {
       toast('切り取れませんでした。Ctrl+X をお使いください', 'error');
       return;
     }
-    markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+    afterBodyEdit();
     toast('切り取りました', 'success');
     return;
   }
   const sel = window.getSelection();
   if (sel && sel.rangeCount > 0) sel.getRangeAt(0).deleteContents();
-  markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight();
+  afterBodyEdit();
   toast('切り取りました', 'success');
 }
 async function clipboardPaste() {
@@ -2071,8 +2045,7 @@ async function clipboardPaste() {
     return;
   }
   if (!text) { toast('クリップボードに文字がありません', 'info'); return; }
-  insertBodyText(text);
-  rebuildLineMarksDebounced(); updateCursorHighlight();
+  insertBodyText(text);   /* 表示の更新は insertBodyText 内の afterBodyEdit がまとめて行う */
 }
 
 /* 書式系のアクションは savedBodyRange を参照するため、メニューを開いた時点の
@@ -2134,15 +2107,12 @@ async function addImageFiles(fileList, sourceName = null) {
 }
 async function removeImage(id) {
   const img = state.images.find(x => x.id === id);
-  const v = await dialog({
+  const ok = await confirmDialog({
     title: '画像の削除',
     message: `「${img?.name || '画像'}」を削除します。この操作は取り消せません。`,
-    buttons: [
-      { label: 'キャンセル', value: 'cancel' },
-      { label: '削除する', value: 'ok', kind: 'danger' },
-    ],
+    okLabel: '削除する',
   });
-  if (v !== 'ok') return;
+  if (!ok) return;
   await Store.del('images', id);
   await loadImages();
   await updateImageCount();
@@ -2361,15 +2331,12 @@ async function fmSave() {
 async function fmDelete() {
   if (fm.editingId === null) return;
   const f = state.formats.find(x => x.id === fm.editingId);
-  const v = await dialog({
+  const ok = await confirmDialog({
     title: 'フォーマットの削除',
     message: `「${f?.name}」を削除します。この操作は取り消せません。`,
-    buttons: [
-      { label: 'キャンセル', value: 'cancel' },
-      { label: '削除する', value: 'ok', kind: 'danger' },
-    ],
+    okLabel: '削除する',
   });
-  if (v !== 'ok') return;
+  if (!ok) return;
   await Store.del('formats', fm.editingId);
   await refreshFormats();
   fmLoad(null);
@@ -2490,9 +2457,7 @@ function toggleSidebar() {
 
 /* ============================================================
    インポート・エクスポート・コピー
-   ============================================================ */
-/* ============================================================
-   Minutes Memo Pro フォーマット変換
+   （Minutes Memo Pro 形式からの変換を含む）
    ============================================================ */
 function dataURLtoBlob(dataURL) {
   const [header, b64] = dataURL.split(',');
@@ -2569,7 +2534,7 @@ async function importMppSession(session, flagMasters) {
   }
 }
 
-async function exportData() {
+function exportData() {
   const data = {
     memos: state.memos,
     formats: state.formats,
@@ -2608,15 +2573,13 @@ async function importData(file) {
     ? `Minutes Memo Pro のデータ（${sessionCount} 件の会議）を変換してインポートします。\n画像も含めて復元されます。現在のデータに追加されます。`
     : '現在のデータに統合（上書きおよび追加）されます。\nよろしいですか？（画像は復元されません）';
 
-  const v = await dialog({
+  const ok = await confirmDialog({
     title: 'データのインポート',
     message: msg,
-    buttons: [
-      { label: 'キャンセル', value: 'cancel' },
-      { label: 'インポート', value: 'ok', kind: isMpp ? 'primary' : 'danger' }
-    ]
+    okLabel: 'インポート',
+    kind: isMpp ? 'primary' : 'danger',
   });
-  if (v !== 'ok') { refs.fileImport.value = ''; return; }
+  if (!ok) { refs.fileImport.value = ''; return; }
 
   try {
     if (fmt === 'minutespro-all') {
@@ -2657,7 +2620,7 @@ async function copyMemoText() {
   try {
     await navigator.clipboard.writeText(text);
     toast('テキストをコピーしました', 'success');
-  } catch (err) {
+  } catch {
     toast('コピーに失敗しました', 'error');
   }
 }
@@ -2889,7 +2852,12 @@ function bindEvents() {
   refs.tmList.addEventListener('click', async e => {
     const btn = e.target.closest('.tm-del');
     if (!btn) return;
-    if (await dialog({ title: 'タグの削除', message: `マスタから「${btn.dataset.tag}」を削除しますか？\n※既存のメモからは削除されません。`, buttons: [{ label: 'キャンセル', value: 'cancel' }, { label: '削除', value: 'ok', kind: 'danger' }] }) !== 'ok') return;
+    const ok = await confirmDialog({
+      title: 'タグの削除',
+      message: `マスタから「${btn.dataset.tag}」を削除しますか？\n※既存のメモからは削除されません。`,
+      okLabel: '削除',
+    });
+    if (!ok) return;
     await Store.del('tags', btn.dataset.tag);
     await refreshTagsMaster();
     toast('タグを削除しました', 'success');
@@ -2923,7 +2891,7 @@ function bindEvents() {
     }
   });
 
-  refs.bodyInput.addEventListener('input', () => { markDirty(); renderCharCount(); rebuildLineMarksDebounced(); updateCursorHighlight(); });
+  refs.bodyInput.addEventListener('input', afterBodyEdit);
   refs.bodyInput.addEventListener('keydown', e => {
     /* Enter などブラウザ既定の編集操作は、キャレット直後にある要素を
        「続きの内容」とみなして分割構造に巻き込むことがある。カーソル行
@@ -3004,7 +2972,7 @@ function bindEvents() {
     const delBtn = e.target.closest('.body-img__del');
     if (delBtn) {
       const wrap = delBtn.closest('.body-img');
-      if (wrap) { wrap.remove(); markDirty(); renderCharCount(); rebuildLineMarksDebounced(); }
+      if (wrap) { wrap.remove(); afterBodyEdit(); }
     }
   });
   refs.bodyInput.addEventListener('change', e => {
@@ -3015,7 +2983,7 @@ function bindEvents() {
         wrap.dataset.size = sel.value;
         const imgEl = wrap.querySelector('.body-img__img');
         if (imgEl) imgEl.style.width = '';   /* プリセット選択時はカスタム幅を解除 */
-        markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+        afterBodyEdit();
       }
     }
   });
@@ -3053,7 +3021,7 @@ function bindEvents() {
     ensureTrailingEditable();
     placeCaretAfter(draggedImg);
     endImgDrag();
-    markDirty(); renderCharCount(); rebuildLineMarksDebounced();
+    afterBodyEdit();
   });
   document.addEventListener('dragend', endImgDrag);
 
@@ -3118,11 +3086,9 @@ function bindEvents() {
      select/color 系コントロールはクリックした瞬間に本文のフォーカス・選択が
      失われるため、開く前(mousedown)に選択範囲を退避しておく */
   refs.btnBold.addEventListener('mousedown', captureBodySelection);
-  refs.btnBold.addEventListener('click', () => toggleTagFormat(
-    el => el.tagName === 'B' || el.tagName === 'STRONG', () => document.createElement('b')));
+  refs.btnBold.addEventListener('click', toggleBold);
   refs.btnItalic.addEventListener('mousedown', captureBodySelection);
-  refs.btnItalic.addEventListener('click', () => toggleTagFormat(
-    el => el.tagName === 'I' || el.tagName === 'EM', () => document.createElement('i')));
+  refs.btnItalic.addEventListener('click', toggleItalic);
   refs.fontSizeSelect.addEventListener('mousedown', captureBodySelection);
   refs.fontSizeSelect.addEventListener('change', () => {
     const val = refs.fontSizeSelect.value;

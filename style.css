@@ -1496,6 +1496,11 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
 .body-editable [data-fmt="task"]{
   display:block;position:relative;padding-left:1.5em;min-height:1em;
 }
+/* 段落は1行を丸ごと占めるため、その直後の改行（保存形式の "\n"）は
+   すでに行が変わっている。そのまま描くと1行ぶん余分に空いてしまう */
+.body-editable [data-fmt="h"] + br,
+.body-editable [data-fmt="li"] + br,
+.body-editable [data-fmt="task"] + br{display:none}
 .body-editable [data-fmt="li"]::before{
   content:"・";position:absolute;left:.3em;color:var(--primary);font-weight:700;
 }

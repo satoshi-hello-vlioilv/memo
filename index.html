@@ -34,6 +34,15 @@
     </div>
   </header>
 
+  <!-- ======== 画面が狭いときのタブ切替（一覧／編集／画像・添付） ========
+       縦積みだと一覧を全部スクロールしないと本文に届かず、戻る手段も無い。
+       幅 768px 以下では 3 つを排他表示にして行き来できるようにする -->
+  <nav class="mobile-tabs" id="mobileTabs">
+    <button class="mtab" data-tab="list"><i class="fa-solid fa-list-ul"></i> 一覧</button>
+    <button class="mtab" data-tab="editor"><i class="fa-solid fa-pen"></i> 編集</button>
+    <button class="mtab" data-tab="files"><i class="fa-regular fa-images"></i> 画像・添付</button>
+  </nav>
+
   <!-- ======== サイドバー：検索・一覧 ======== -->
   <aside class="sidebar">
     <div class="sidebar-head">
@@ -62,6 +71,7 @@
         <button class="scope-chip active" data-scope="body" title="本文を検索対象に含める（クリックで切替）"><i class="fa-solid fa-align-left"></i> 本文</button>
       </div>
     </div>
+    <div class="filter-bar" id="filterBar"></div>
     <div class="markbar" id="markBar"></div>
     <div class="tagbar" id="tagBar"></div>
     <div class="list-meta">
@@ -161,16 +171,6 @@
           <button id="btnBold" class="icon-btn" title="太字（Ctrl+B）"><i class="fa-solid fa-bold"></i></button>
           <button id="btnItalic" class="icon-btn" title="斜体（Ctrl+I）"><i class="fa-solid fa-italic"></i></button>
           <button id="btnLink" class="icon-btn" title="リンクを挿入・編集（Ctrl+K）"><i class="fa-solid fa-link"></i></button>
-          <select id="fontFamilySelect" class="fmt-select fmt-select--sm" title="フォント">
-            <option value="">フォント</option>
-            <option value="reset">フォント解除</option>
-            <option value="gothic">ゴシック体</option>
-            <option value="mincho">明朝体</option>
-            <option value="maru">丸ゴシック</option>
-            <option value="mono">等幅</option>
-            <option value="serif">Serif</option>
-            <option value="sans">Sans</option>
-          </select>
           <select id="fontSizeSelect" class="fmt-select fmt-select--sm" title="文字サイズ">
             <option value="">サイズ</option>
             <option value="reset">サイズ解除</option>
@@ -185,26 +185,50 @@
             <input type="color" id="textColorInput" value="#243038">
             <button type="button" class="color-reset" id="btnClearTextColor" title="文字色を解除"><i class="fa-solid fa-xmark"></i></button>
           </span>
-          <span class="color-tool" title="ハイライト">
-            <i class="fa-solid fa-highlighter"></i>
-            <input type="color" id="highlightColorInput" value="#fff59d">
-            <button type="button" class="color-reset" id="btnClearHighlight" title="ハイライトを解除"><i class="fa-solid fa-xmark"></i></button>
-          </span>
           <button id="btnClearFormat" class="icon-btn" title="標準の書式に戻す（黒・標準サイズ・太さ普通）"><i class="fa-solid fa-text-slash"></i></button>
-        </div>
-        <span class="tool-div"></span>
-        <div class="tool-group">
-          <select id="formatSelect" class="fmt-select fmt-select--tpl">
-            <option value="">フォーマットを選択</option>
-          </select>
-          <button id="btnApplyFormat" class="icon-btn" title="選択したフォーマットをカーソル位置に挿入"><i class="fa-solid fa-stamp"></i></button>
         </div>
         <div class="tool-group toolbar-end">
           <span id="recIndicator" class="rec-indicator" hidden="">
             <span class="rec-dot"></span>REC <span id="recTime" class="mono">0:00</span>
           </span>
-          <button id="btnMic" class="btn btn-soft" title="本文へ音声で直接入力します"><i class="fa-solid fa-microphone"></i> 音声入力</button>
-          <button id="btnShowMarks" class="icon-btn" title="改行マークの表示切替"><i class="fa-solid fa-paragraph"></i></button>
+          <!-- 使用頻度の低い操作はここへ格納し、ツールバーを1段に保つ -->
+          <div class="tool-more-wrap">
+            <button id="btnToolMore" class="icon-btn" title="その他の操作" aria-haspopup="true" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>
+            <div class="tool-more" id="toolMore" hidden="">
+              <div class="tool-more-row">
+                <span class="tool-more-label">フォント</span>
+                <select id="fontFamilySelect" class="fmt-select fmt-select--sm" title="フォント">
+                  <option value="">フォント</option>
+                  <option value="reset">フォント解除</option>
+                  <option value="gothic">ゴシック体</option>
+                  <option value="mincho">明朝体</option>
+                  <option value="maru">丸ゴシック</option>
+                  <option value="mono">等幅</option>
+                  <option value="serif">Serif</option>
+                  <option value="sans">Sans</option>
+                </select>
+              </div>
+              <div class="tool-more-row">
+                <span class="tool-more-label">ハイライト</span>
+                <span class="color-tool" title="ハイライト">
+                  <i class="fa-solid fa-highlighter"></i>
+                  <input type="color" id="highlightColorInput" value="#fff59d">
+                  <button type="button" class="color-reset" id="btnClearHighlight" title="ハイライトを解除"><i class="fa-solid fa-xmark"></i></button>
+                </span>
+              </div>
+              <div class="tool-more-sep"></div>
+              <div class="tool-more-row">
+                <span class="tool-more-label">フォーマット</span>
+                <select id="formatSelect" class="fmt-select fmt-select--tpl">
+                  <option value="">フォーマットを選択</option>
+                </select>
+                <button id="btnApplyFormat" class="icon-btn" title="選択したフォーマットをカーソル位置に挿入"><i class="fa-solid fa-stamp"></i></button>
+              </div>
+              <div class="tool-more-sep"></div>
+              <button id="btnMic" class="tool-more-item" title="本文へ音声で直接入力します"><i class="fa-solid fa-microphone"></i> 音声入力</button>
+              <button id="btnShowMarks" class="tool-more-item" title="改行マークの表示切替"><i class="fa-solid fa-paragraph"></i> 改行マークの表示</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -447,6 +471,7 @@
      main.js（イベント結線・初期化）は他が出揃ってから最後に置く。 -->
 <script src="js/core.js"></script>
 <script src="js/search.js"></script>
+<script src="js/filterbar.js"></script>
 <script src="js/body-parse.js"></script>
 <script src="js/list.js"></script>
 <script src="js/bulk.js"></script>

@@ -23,10 +23,9 @@ function applyTrashViewState() {
 }
 function toggleTrashView(on = !state.trashView) {
   state.trashView = on;
-  /* 表示が切り替わると対象の母集団が変わるため、選択と絞り込みは持ち越さない */
+  /* 表示が切り替わると対象の母集団が変わるため、選択は持ち越さない。
+     絞り込み条件は条件チップに出ていて解除もそこからできるので残す */
   clearSelection();
-  state.markFilter = null;
-  state.tagFilter = null;
   renderList();
 }
 

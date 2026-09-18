@@ -42,6 +42,7 @@ function setCurrentMark(markId) {
 function showSheet() {
   refs.welcome.hidden = true;
   refs.sheet.hidden = false;
+  focusEditorTab();   /* 狭い画面では編集タブへ移る */
 }
 function showWelcome() {
   refs.sheet.hidden = true;
@@ -227,14 +228,83 @@ async function guardDirty() {
 /* ============================================================
    画像パネルの開閉
    ============================================================ */
+/* 画面が狭いときは画像パネルを自動的に畳む。
+   3カラムのまま列幅だけが縮むと編集列が 250px 前後まで潰れ、フッターが
+   はみ出して保存ボタンに届かなくなるため。利用者が選んだ開閉状態
+   (state.panelOpen) は書き換えず、広い画面に戻したときに復帰させる */
+/* しきい値はサイドバー(336px)＋画像パネル(352px)を引いた残りが編集に
+   使える幅になることから決めている。1150px を下回ると編集列が 460px を
+   切り、ツールバーとフッターが何段にも折り返し始める */
+const NARROW_PANEL_MQ = typeof matchMedia === 'function'
+  ? matchMedia('(max-width: 1150px)') : null;
+let panelAutoClosed = false;
+
+function panelEffectivelyOpen() {
+  return state.panelOpen && !panelAutoClosed;
+}
 function applyPanelState() {
-  refs.app.classList.toggle('panel-closed', !state.panelOpen);
-  refs.btnPanelOpen.hidden = state.panelOpen;
+  const open = panelEffectivelyOpen();
+  refs.app.classList.toggle('panel-closed', !open);
+  refs.btnPanelOpen.hidden = open;
 }
 function togglePanel(open) {
   state.panelOpen = open;
+  /* 手動操作は自動折りたたみより優先する（狭い画面でも開けるように） */
+  panelAutoClosed = false;
   applyPanelState();
   savePref('panelOpen', open);
+}
+/* 幅の変化に追従する。狭くなった時点で自動的に畳み、広がったら戻す */
+function syncPanelToWidth() {
+  if (!NARROW_PANEL_MQ) return;
+  const narrow = NARROW_PANEL_MQ.matches;
+  if (narrow && !panelAutoClosed) {
+    panelAutoClosed = true;
+    applyPanelState();
+  } else if (!narrow && panelAutoClosed) {
+    panelAutoClosed = false;
+    applyPanelState();
+  }
+}
+/* ============================================================
+   画面が狭いときのタブ切替（一覧／編集／画像・添付）
+   ============================================================ */
+const MOBILE_MQ = typeof matchMedia === 'function' ? matchMedia('(max-width: 768px)') : null;
+const isMobileLayout = () => !!(MOBILE_MQ && MOBILE_MQ.matches);
+
+function applyMobileTab() {
+  refs.app.dataset.mtab = state.mobileTab;
+  for (const b of $$('.mtab', refs.mobileTabs)) {
+    b.classList.toggle('active', b.dataset.tab === state.mobileTab);
+  }
+}
+function setMobileTab(tab) {
+  state.mobileTab = tab;
+  applyMobileTab();
+}
+/* メモを開いたら編集タブへ移る。狭い画面では、開いた直後に本文が見えないと
+   何が起きたのか分からないため */
+function focusEditorTab() {
+  if (isMobileLayout()) setMobileTab('editor');
+}
+function setupMobileTabs() {
+  applyMobileTab();
+  refs.mobileTabs.addEventListener('click', e => {
+    const btn = e.target.closest('.mtab');
+    if (btn) setMobileTab(btn.dataset.tab);
+  });
+}
+
+function setupResponsivePanel() {
+  if (!NARROW_PANEL_MQ) return;
+  syncPanelToWidth();
+  const onChange = () => {
+    /* 幅の帯をまたいだときは、自動制御の状態を作り直す */
+    panelAutoClosed = false;
+    syncPanelToWidth();
+  };
+  if (NARROW_PANEL_MQ.addEventListener) NARROW_PANEL_MQ.addEventListener('change', onChange);
+  else NARROW_PANEL_MQ.addListener(onChange);
 }
 function applySidebarState() {
   refs.app.classList.toggle('sidebar-closed', !state.sidebarOpen);

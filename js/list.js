@@ -84,7 +84,13 @@ async function renameTagAsked(oldName) {
     toast('タグを変更できませんでした', 'error');
     return;
   }
-  if (state.tagFilter === oldName) state.tagFilter = next;
+  /* 検索欄に `tag:旧名` が残っていたら新しい名前へ置き換える
+     （そのままだと 0 件になって、何が起きたのか分からなくなる） */
+  for (const sign of ['', '-']) {
+    const from = `${sign}tag:${oldName}`;
+    if (!queryHasToken(refs.searchInput.value, from)) continue;
+    setSearchQuery(renameQueryToken(refs.searchInput.value, from, `${sign}tag:${next}`));
+  }
   await refreshMemos();
   await refreshTagsMaster();
   await refreshFormats();
@@ -124,8 +130,10 @@ function currentQuery() {
   }
   return parsedQuery.value;
 }
-/* 検索語以外の絞り込み（タグバー・目印バー・画像/添付フィルタ）が効いているか */
-const hasSideFilter = () => !!(state.tagFilter || state.markFilter || state.imageOnly || state.fileOnly);
+/* 検索語以外の絞り込み（画像/添付フィルタ）が効いているか。
+   タグ・目印の絞り込みは検索欄の `tag:` `mark:` に一本化したので
+   state.query 側に含まれる */
+const hasSideFilter = () => !!(state.imageOnly || state.fileOnly);
 
 function compareMemos(a, b) {
   const dir = state.sortDir === 'asc' ? 1 : -1;
@@ -153,8 +161,6 @@ function filteredMemos() {
       if (state.trashView !== !!m.deletedAt) return false;
       if (state.imageOnly && !(m.imageCount > 0)) return false;
       if (state.fileOnly && !(m.fileCount > 0)) return false;
-      if (state.markFilter && m.mark !== state.markFilter) return false;
-      if (state.tagFilter && !(m.tags || []).includes(state.tagFilter)) return false;
       if (empty) return true;
       return matchMemoQuery(m, q, scope, memoSearchText(m));
     })
@@ -324,10 +330,8 @@ async function activateSearchSuggest(item) {
     const id = Number(item.dataset.id);
     if (id !== state.currentId && await guardDirty()) openMemo(id);
   } else if (kind === 'tag') {
-    const tag = item.dataset.tag;
-    /* 空白を含むタグは "..." で囲まないと 1 語として扱えない */
-    const value = /[\s　]/.test(tag) ? `tag:"${tag}"` : `tag:${tag}`;
-    setSearchQuery(replaceLastToken(refs.searchInput.value, value) + ' ');
+    /* 空白を含むタグは "..." で囲まないと 1 語として扱えない（tagToken が面倒を見る） */
+    setSearchQuery(replaceLastToken(refs.searchInput.value, tagToken(item.dataset.tag)) + ' ');
     refs.searchInput.focus();
   }
 }
@@ -471,17 +475,18 @@ function renderList() {
   refs.listEmptyMsg.innerHTML = state.trashView
     ? 'ゴミ箱は空です。<br>削除したメモは 30 日間ここに残ります。'
     : (state.query || hasSideFilter())
-      ? '条件に一致するメモがありません。<br>検索語・検索範囲・タグ・目印・画像／添付フィルタを見直してください。'
+      ? '条件に一致するメモがありません。<br>上の「絞り込み」の × で条件を1つずつ外すか、検索範囲を見直してください。'
       : 'メモはまだありません。<br>「新規メモ」から作成できます。';
   renderMarkBar();
   renderTagBar();
+  renderFilterBar();
 }
 /* 実際に使われている目印だけを絞り込みチップとして並べる。1件も無ければ
    バー自体を空にして場所を取らない(.markbar:empty で非表示) */
 function renderMarkBar() {
   const counts = countMarks(state.trashView ? trashedMemos() : activeMemos());
   refs.markBar.innerHTML = MEMO_MARKS.filter(mk => counts.has(mk.id)).map(mk =>
-    `<button class="mark-chip ${state.markFilter === mk.id ? 'active' : ''}" data-mark="${mk.id}"
+    `<button class="mark-chip ${markChipActive(mk.id) ? 'active' : ''}" data-mark="${mk.id}"
        title="「${esc(mk.label)}」の目印が付いたメモだけを表示">
        <i class="fa-solid ${mk.icon} mk-${mk.id}"></i>${esc(mk.label)}
        <span class="cnt">${counts.get(mk.id)}</span></button>`).join('');
@@ -490,7 +495,7 @@ function renderTagBar() {
   const tags = [...countTags(state.trashView ? trashedMemos() : activeMemos())]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'));
   refs.tagBar.innerHTML = tags.map(([t, n]) =>
-    `<button class="chip ${state.tagFilter === t ? 'active' : ''}" data-tag="${esc(t)}">
+    `<button class="chip ${tagChipActive(t) ? 'active' : ''}" data-tag="${esc(t)}">
        ${esc(t)}<span class="cnt">${n}</span></button>`).join('');
 }
 

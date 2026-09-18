@@ -47,7 +47,14 @@ function bindEvents() {
     renderSearchSuggest(refs.searchInput.value);
   });
   refs.searchInput.addEventListener('focus', () => renderSearchSuggest(refs.searchInput.value));
-  refs.searchInput.addEventListener('blur', () => addToHistory(refs.searchInput.value));
+  refs.searchInput.addEventListener('blur', () => {
+    addToHistory(refs.searchInput.value);
+    /* 候補一覧は検索欄のすぐ下にある条件チップやタグバーを覆ってしまう。
+       検索欄から離れた時点で閉じ、下のチップが1回のクリックで押せるようにする
+       （候補自体は mousedown を抑えているので、候補のクリックは閉じない） */
+    refs.searchSuggest.hidden = true;
+    suggestIndex = -1;
+  });
   refs.searchInput.addEventListener('keydown', e => {
     if (refs.searchSuggest.hidden) {
       if (e.key === 'Enter') addToHistory(refs.searchInput.value);
@@ -109,18 +116,14 @@ function bindEvents() {
   refs.tagBar.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    const tag = chip.dataset.tag;
-    state.tagFilter = state.tagFilter === tag ? null : tag;
-    renderList();
+    toggleTagChip(chip.dataset.tag);
   });
 
   /* --- 目印（付箋）：一覧の絞り込み／編集中メモへの付け外し --- */
   refs.markBar.addEventListener('click', e => {
     const chip = e.target.closest('.mark-chip');
     if (!chip) return;
-    const mk = chip.dataset.mark;
-    state.markFilter = state.markFilter === mk ? null : mk;
-    renderList();
+    toggleMarkChip(chip.dataset.mark);
   });
   refs.markPicker.addEventListener('click', e => {
     if (e.target.closest('.mark-clear')) { setCurrentMark(null); return; }
@@ -151,7 +154,9 @@ function bindEvents() {
       toast('ゴミ箱のメモは編集できません。「復元」で元に戻してください', 'info');
       return;
     }
-    if (id === state.currentId) return;
+    /* 既に開いているメモでも、狭い画面では編集タブへ移す。
+       一覧から押した以上は本文が見えるのが期待される動作のため */
+    if (id === state.currentId) { focusEditorTab(); return; }
     if (await guardDirty()) openMemo(id);
   });
 
@@ -445,6 +450,29 @@ function bindEvents() {
   refs.btnApplyFormat.addEventListener('click', applyFormat);
 
   /* --- 改行マークの表示切替 --- */
+  /* --- ツールバーのオーバーフローメニュー --- */
+  const closeToolMore = () => {
+    if (refs.toolMore.hidden) return;
+    refs.toolMore.hidden = true;
+    refs.btnToolMore.setAttribute('aria-expanded', 'false');
+    refs.btnToolMore.classList.remove('active');
+  };
+  refs.btnToolMore.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = refs.toolMore.hidden;
+    refs.toolMore.hidden = !open;
+    refs.btnToolMore.setAttribute('aria-expanded', String(open));
+    refs.btnToolMore.classList.toggle('active', open);
+  });
+  /* 中の操作は選択範囲を保つ必要があるため、メニュー自体のクリックでは閉じない。
+     音声入力・改行マークのように一度で完結するものだけ閉じる */
+  refs.toolMore.addEventListener('click', e => {
+    if (e.target.closest('#btnMic, #btnShowMarks')) closeToolMore();
+    e.stopPropagation();
+  });
+  document.addEventListener('click', closeToolMore);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeToolMore(); });
+
   refs.btnShowMarks.addEventListener('click', () => {
     state.showLineMarks = !state.showLineMarks;
     applyShowLineMarksState();
@@ -580,18 +608,8 @@ function bindEvents() {
     savePref('groupByDate', state.groupByDate);
     renderList();
   });
-  refs.btnImageFilter.addEventListener('click', () => {
-    state.imageOnly = !state.imageOnly;
-    applyImageFilterState();
-    savePref('imageOnly', state.imageOnly);
-    renderList();
-  });
-  refs.btnFileFilter.addEventListener('click', () => {
-    state.fileOnly = !state.fileOnly;
-    applyImageFilterState();
-    savePref('fileOnly', state.fileOnly);
-    renderList();
-  });
+  refs.btnImageFilter.addEventListener('click', () => setImageOnly(!state.imageOnly));
+  refs.btnFileFilter.addEventListener('click', () => setFileOnly(!state.fileOnly));
   refs.sortKeySelect.addEventListener('change', () => {
     state.sortKey = refs.sortKeySelect.value;
     applySortState();
@@ -761,6 +779,9 @@ async function init() {
   applyThumbSize();
   applyImgPanelWidth();
   applyPanelState();
+  setupResponsivePanel();
+  setupMobileTabs();
+  bindFilterBar();
   applySidebarState();
   applyGroupByDateState();
   applySortState();

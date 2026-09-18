@@ -266,6 +266,49 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .scope-chip:hover{background:var(--ink-800);color:var(--inv-text)}
 .scope-chip.active{background:var(--primary);color:#fff}
 
+/* ============================================================
+   条件チップ（いま効いている絞り込み）
+   ------------------------------------------------------------
+   タグバー・目印バー・検索構文と入口が分かれていると、何で絞られて
+   いるのかを探し回ることになる。効いている条件はすべてここへ集約し、
+   × で1つずつ、「すべて解除」でまとめて外せるようにする
+   ============================================================ */
+.filter-bar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  margin:0 14px 10px;padding:7px 9px;
+  border:1px solid var(--ink-700);border-radius:var(--radius-s);
+  background:rgba(19,121,108,.14);
+}
+.filter-bar:empty{display:none}
+.cond-lead{
+  display:inline-flex;align-items:center;gap:5px;
+  color:var(--inv-sub);font-size:10.5px;letter-spacing:.04em;
+}
+.cond-lead i{font-size:9.5px}
+.cond-chip{
+  display:inline-flex;align-items:center;gap:5px;max-width:100%;
+  padding:3px 4px 3px 9px;border-radius:999px;
+  border:1px solid var(--primary);background:var(--primary);
+  color:#fff;font-size:11px;line-height:1.5;
+  transition:background-color .12s,border-color .12s;
+}
+.cond-chip i{font-size:10px;color:#fff;flex-shrink:0}
+/* 条件名が長くても1行に収め、バーが縦に伸びて一覧を押し下げないようにする */
+.cond-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cond-x{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:15px;height:15px;border-radius:50%;flex-shrink:0;
+  background:rgba(255,255,255,.2);
+}
+.cond-chip:hover{background:var(--primary-deep);border-color:var(--primary-deep)}
+.cond-chip:hover .cond-x{background:rgba(255,255,255,.38)}
+.cond-clear{
+  margin-left:auto;padding:3px 8px;border-radius:var(--radius-s);
+  color:var(--inv-sub);font-size:10.5px;
+  border:1px solid transparent;
+}
+.cond-clear:hover{color:var(--inv-text);border-color:var(--ink-700);background:var(--ink-850)}
+
 .tagbar{
   display:flex;flex-wrap:wrap;gap:6px;
   padding:0 14px 10px;
@@ -591,6 +634,50 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 .tool-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .toolbar-end{margin-left:auto}
+
+/* 画面が狭いときのタブ切替。広い画面では使わないので既定は非表示 */
+.mobile-tabs{display:none;background:var(--ink-900);border-bottom:1px solid var(--ink-line);flex-shrink:0}
+.mtab{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+  padding:11px 6px;
+  color:var(--inv-sub);font-size:12.5px;font-weight:600;
+  border-bottom:2px solid transparent;
+  transition:color .12s,border-color .12s,background-color .12s;
+}
+.mtab i{font-size:12px}
+.mtab:hover{color:var(--inv-text)}
+.mtab.active{color:var(--inv-text);border-bottom-color:var(--primary);background:var(--ink-850)}
+
+/* ツールバーのオーバーフローメニュー（使用頻度の低い操作の格納先）。
+   ツールバーを1段に保ちつつ、機能への到達手段は残す */
+.tool-more-wrap{position:relative;display:inline-flex}
+.tool-more{
+  position:absolute;top:calc(100% + 6px);right:0;z-index:120;
+  min-width:250px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:10px;
+  box-shadow:var(--shadow-2);
+  padding:7px;
+  display:flex;flex-direction:column;gap:3px;
+}
+.tool-more-row{display:flex;align-items:center;gap:8px;padding:2px 4px}
+.tool-more-label{
+  flex:1;font-size:11.5px;color:var(--text-sub);white-space:nowrap;
+}
+.tool-more-sep{height:1px;background:var(--line);margin:4px 2px}
+.tool-more-item{
+  display:flex;align-items:center;gap:9px;
+  width:100%;padding:7px 9px;border-radius:6px;
+  color:var(--text);font-size:13px;text-align:left;
+  transition:background-color .12s,color .12s;
+}
+.tool-more-item > i{width:15px;text-align:center;color:var(--text-sub);font-size:12px}
+.tool-more-item:hover{background:var(--primary-soft);color:var(--primary-deep)}
+.tool-more-item:hover > i{color:var(--primary)}
+.tool-more-item.recording{background:var(--rec-soft);color:var(--rec-deep)}
+.tool-more-item.recording > i{color:var(--rec)}
+.toolbar .icon-btn.active{color:var(--primary);background:var(--primary-soft)}
 .toolbar .icon-btn{width:28px;height:28px}
 .toolbar .icon-btn.active{color:var(--primary);background:var(--primary-soft)}
 .fmt-select{
@@ -1364,29 +1451,32 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   }
 }
 @media (max-width: 768px) {
+  /* 一覧／編集／画像・添付をタブで排他表示する。縦積みのままだと本文へ
+     届くまでに一覧を延々スクロールする必要があり、戻る手段も無かった */
   #app {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
   }
   .topbar { padding: 0 10px; height: auto; min-height: var(--topbar-h); flex-wrap: wrap; }
-  .sidebar, .imgpanel { border: none; min-height: 300px; flex-shrink: 0; }
-  #app.sidebar-closed .sidebar { display: none !important; }
-  .sidebar { border-bottom: 1px solid var(--ink-line); }
-  .imgpanel { border-top: 1px solid var(--line); display: flex !important; }
-  #app.panel-closed .imgpanel { display: none !important; }
-  /* #app がスクロール可能な縦積みレイアウトになるため、.editor は他の
-     セクション(サイドバー・画像パネル)に押し潰されず、自身の内容の高さを
-     保つ必要がある。保たないと .editor の overflow:hidden(デスクトップ用)に
-     よって内容(保存ボタンを含む sheet-foot 等)が見えなくなり、かつ #app の
-     スクロールでも復帰できなくなる */
-  .editor { flex-shrink: 0; overflow: visible; }
-  .editor-sheet { margin: 10px; width: calc(100% - 20px); flex: none; }
-  .sheet-head, .toolbar, .sheet-foot { padding: 10px 15px; }
-  .body-editable { padding: 15px; min-height: 300px; }
-  .panel-open-tab { top: auto; bottom: 20px; right: 0; transform: none; z-index: 30; }
-  .sidebar-open-tab { top: 60px; transform: none; z-index: 30; border-radius: 0 8px 8px 0; }
+  .mobile-tabs { display: flex; }
+
+  /* 表示中のタブだけを残し、残りの高さいっぱいに広げる */
+  .sidebar, .editor, .imgpanel { display: none; min-height: 0; flex: 1 1 auto; border: none; }
+  #app[data-mtab="list"]   .sidebar  { display: flex; }
+  #app[data-mtab="editor"] .editor   { display: flex; overflow: hidden; }
+  #app[data-mtab="files"]  .imgpanel { display: flex; }
+  /* サイドバー／パネルの開閉はタブ表示より優先しない（タブが唯一の導線） */
+  #app.sidebar-closed .sidebar { pointer-events: auto; }
+  .sidebar-open-tab, .panel-open-tab, .imgpanel-resizer { display: none !important; }
+
+  .editor-sheet { margin: 8px; width: calc(100% - 16px); }
+  .sheet-head, .toolbar, .sheet-foot { padding: 9px 13px; }
+  .body-editable { padding: 13px; }
   .toolbar { flex-wrap: wrap; }
+  /* フッターは横に並べきれないので折り返し、保存を右端に保つ */
+  .sheet-foot { flex-wrap: wrap; gap: 8px; }
+  .foot-right { margin-left: auto; }
 }
 
 /* ============================================================

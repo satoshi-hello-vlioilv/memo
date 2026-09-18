@@ -6,7 +6,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 /* ============================================================
    ユーティリティ
@@ -170,10 +170,12 @@ const state = {
   currentId: null,
   currentMark: null,
   dirty: false, savedAt: null,
-  query: '', tagFilter: null, imageOnly: false, fileOnly: false, markFilter: null,
+  /* タグ・目印の絞り込みは検索欄（tag: / mark:）へ一本化したので状態を持たない */
+  query: '', imageOnly: false, fileOnly: false,
   searchScope: { title: true, tags: true, body: true },
   searchHistory: [],
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
+  mobileTab: 'list',   /* 幅768px以下のタブ表示（list/editor/files） */
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc', sortKey: 'updatedAt',
   showLineMarks: false,
@@ -191,14 +193,14 @@ const state = {
 const refs = {};
 function collectRefs() {
   const ids = [
-    'app','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
+    'app','mobileTabs','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
     'sidebarTitle','btnTrash','trashBar','trashCount','btnEmptyTrash','btnExitTrash',
-    'searchInput','searchClear','searchScope','searchSuggest','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','searchScope','searchSuggest','filterBar','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'bulkBar','bulkCount','btnBulkAll','bulkAllLabel','bulkNormalActs','bulkTrashActs','btnBulkTag','bulkMarkSelect','btnBulkExport','btnBulkTrash','btnBulkRestore','btnBulkPurge',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
-    'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime','btnShowMarks',
+    'formatSelect','btnApplyFormat','btnToolMore','toolMore','btnMic','recIndicator','recTime','btnShowMarks',
     'btnUndo','btnRedo','blockSelect','btnBold','btnItalic','btnLink','fontFamilySelect','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
     'btnClearTextColor','btnClearHighlight',
     'findBar','findInput','findCount','findPrev','findNext','replaceInput','findReplace','findReplaceAll','findClose',

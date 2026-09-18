@@ -13,6 +13,9 @@ Object.assign(globalThis, core);
 const search = load('search.js');
 Object.assign(globalThis, search);
 
+const filterbar = load('filterbar.js');
+Object.assign(globalThis, filterbar);
+
 const bodyParse = load('body-parse.js');
 Object.assign(globalThis, bodyParse);
 
@@ -21,4 +24,4 @@ const data = load('data.js');
 const files = load('files.js');
 const body = load('body.js');
 
-module.exports = { core, search, bodyParse, list, data, files, body };
+module.exports = { core, search, filterbar, bodyParse, list, data, files, body };

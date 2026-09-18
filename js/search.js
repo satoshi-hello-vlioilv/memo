@@ -62,7 +62,10 @@ function splitSearchTokens(input) {
       if (c === '"' || c === '「') {           /* " または 「 */
         const close = c === '"' ? '"' : '」';  /* " または 」 */
         const end = s.indexOf(close, i + 1);
-        quoted = true;
+        /* 引用符で始まる語だけを「文字どおりの1語」とみなす。
+           tag:"営業 部" のように途中から囲む書き方は、値に空白を含めたい
+           だけなので、先頭の - による除外指定を殺さないようにする */
+        if (text === '') quoted = true;
         if (end === -1) { text += s.slice(i + 1); i = s.length; break; }
         text += s.slice(i + 1, end);
         i = end + 1;
@@ -129,13 +132,16 @@ function parseSearchQuery(input, options = {}) {
   const q = { terms: [], tags: [], marks: [], flags: [], ranges: [], text: String(input ?? '') };
   for (const tok of splitSearchTokens(input)) {
     let raw = tok.text;
+    /* src は「検索欄に書かれていた語そのもの」。条件チップが、表記ゆれを
+       気にせずその語だけを消せるように持たせておく（照合には使わない） */
+    const src = tok.text;
     let negate = false;
     if (!tok.quoted && (raw.startsWith('-') || raw.startsWith('－')) && raw.length > 1) {
       negate = true;
       raw = raw.slice(1);
     }
     const addTerm = (text, field = null) => {
-      if (text) q.terms.push({ text: text.toLowerCase(), negate, field });
+      if (text) q.terms.push({ text: text.toLowerCase(), negate, field, src, raw: text });
     };
     const sep = raw.indexOf(':');
     const sepFull = raw.indexOf('：');   /* 全角コロン */
@@ -145,16 +151,16 @@ function parseSearchQuery(input, options = {}) {
     const value = raw.slice(at + 1);
     if (!field || !value) { addTerm(raw); continue; }
 
-    if (field === 'tag') { q.tags.push({ name: value.toLowerCase(), negate }); continue; }
+    if (field === 'tag') { q.tags.push({ name: value.toLowerCase(), negate, src, raw: value }); continue; }
     if (field === 'mark') {
       const id = resolveMark(value);
-      if (id) q.marks.push({ id, negate });
+      if (id) q.marks.push({ id, negate, src, raw: value });
       else addTerm(raw);
       continue;
     }
     if (field === 'is') {
       const flag = SEARCH_IS_ALIASES[value.toLowerCase()];
-      if (flag) q.flags.push({ name: flag, negate });
+      if (flag) q.flags.push({ name: flag, negate, src, raw: value });
       else addTerm(raw);
       continue;
     }
@@ -163,9 +169,11 @@ function parseSearchQuery(input, options = {}) {
     const range = parseDateValue(value, now);
     if (!range) { addTerm(raw); continue; }
     const on = field === 'updated' ? 'updatedAt' : 'createdAt';
-    if (field === 'after')       q.ranges.push({ field: 'createdAt', from: range.from, to: Infinity, negate });
-    else if (field === 'before') q.ranges.push({ field: 'createdAt', from: -Infinity, to: range.to, negate });
-    else                         q.ranges.push({ field: on, from: range.from, to: range.to, negate });
+    /* raw/key は条件チップの表示に使う（照合には使わない） */
+    const meta = { raw: value, key: field, src };
+    if (field === 'after')       q.ranges.push({ field: 'createdAt', from: range.from, to: Infinity, negate, ...meta });
+    else if (field === 'before') q.ranges.push({ field: 'createdAt', from: -Infinity, to: range.to, negate, ...meta });
+    else                         q.ranges.push({ field: on, from: range.from, to: range.to, negate, ...meta });
   }
   return q;
 }

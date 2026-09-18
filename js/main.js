@@ -345,7 +345,7 @@ function bindEvents() {
       positionCtxMenu(rect.left, rect.top);
       return;
     }
-    const btn = e.target.closest('.ctx-item, .ctx-size, .ctx-swatch');
+    const btn = e.target.closest('.ctx-item, .ctx-size, .ctx-swatch, .ctx-font');
     if (!btn || btn.disabled) return;
     runCtxAction(btn.dataset.act);
   });
@@ -355,17 +355,37 @@ function bindEvents() {
   window.addEventListener('resize', hideCtxMenu);
   refs.bodyInput.addEventListener('scroll', hideCtxMenu);
 
-  /* クリップボード画像の貼り付け（bodyInput フォーカス外でも動作） */
+  /* クリップボードの貼り付け（bodyInput フォーカス外でも動作）
+     - 画像ファイル  → メモの画像として登録
+     - それ以外のファイル → 添付ファイルとして登録
+     - HTML        → 本文が扱える書式だけに変換して挿入
+     - Ctrl+Shift+V / 書式なし貼り付け → プレーンテキストとして挿入 */
   window.addEventListener('paste', e => {
     if (refs.sheet.hidden) return;
     const items = [...(e.clipboardData?.items || [])];
-    const imageFiles = items
-      .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
-      .map(it => it.getAsFile()).filter(Boolean);
-    if (imageFiles.length > 0) {
+    const files = items.filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean);
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    const otherFiles = files.filter(f => !f.type.startsWith('image/'));
+    if (imageFiles.length > 0 || otherFiles.length > 0) {
       e.preventDefault();
-      addImageFiles(imageFiles, 'clipboard');
+      if (imageFiles.length > 0) addImageFiles(imageFiles, 'clipboard');
+      if (otherFiles.length > 0) addAttachmentFiles(otherFiles, 'clipboard');
+      return;
     }
+    /* 本文以外（タイトル・タグ等）への貼り付けは既定のままにする */
+    if (document.activeElement !== refs.bodyInput) return;
+
+    const html = e.clipboardData?.getData('text/html');
+    const plain = e.clipboardData?.getData('text/plain') || '';
+    if (pastePlainOnce || !html) {
+      if (!plain) return;
+      e.preventDefault();
+      insertBodyText(plain);
+      pastePlainOnce = false;
+      return;
+    }
+    e.preventDefault();
+    insertBodyFragment(htmlToBodyFragment(html));
   });
 
   /* --- 保存・削除・コピー --- */
@@ -386,11 +406,26 @@ function bindEvents() {
 
   /* --- 書式設定(太字・斜体・文字サイズ・文字色・ハイライト) ---
      select/color 系コントロールはクリックした瞬間に本文のフォーカス・選択が
-     失われるため、開く前(mousedown)に選択範囲を退避しておく */
-  refs.btnBold.addEventListener('mousedown', captureBodySelection);
+     失われるため、開く前(mousedown)に選択範囲を退避しておく。
+     ボタン類は mousedown の既定動作(ボタンへフォーカス移動)を止めることで
+     本文のキャレット自体を保つ。止めないと、選択が無い状態で押したときに
+     フォーカスがボタンへ移ったまま戻らず、その後の入力が本文に入らない */
+  const keepBodyFocus = btn => btn.addEventListener('mousedown', e => {
+    e.preventDefault();
+    captureBodySelection();
+  });
+  keepBodyFocus(refs.btnBold);
   refs.btnBold.addEventListener('click', toggleBold);
-  refs.btnItalic.addEventListener('mousedown', captureBodySelection);
+  keepBodyFocus(refs.btnItalic);
   refs.btnItalic.addEventListener('click', toggleItalic);
+  refs.fontFamilySelect.addEventListener('mousedown', captureBodySelection);
+  refs.fontFamilySelect.addEventListener('change', () => {
+    const val = refs.fontFamilySelect.value;
+    refs.fontFamilySelect.value = '';
+    if (!val) return;
+    if (val === 'reset') { clearFormatType('font', '選択範囲にフォントは設定されていません'); return; }
+    applyInlineFormat(() => createFormatElement('font', val), 'font');
+  });
   refs.fontSizeSelect.addEventListener('mousedown', captureBodySelection);
   refs.fontSizeSelect.addEventListener('change', () => {
     const val = refs.fontSizeSelect.value;
@@ -403,15 +438,15 @@ function bindEvents() {
   refs.textColorInput.addEventListener('change', () => {
     applyInlineFormat(() => createFormatElement('color', refs.textColorInput.value), 'color');
   });
-  refs.btnClearTextColor.addEventListener('mousedown', captureBodySelection);
+  keepBodyFocus(refs.btnClearTextColor);
   refs.btnClearTextColor.addEventListener('click', () => clearFormatType('color', '選択範囲に文字色は設定されていません'));
   refs.highlightColorInput.addEventListener('mousedown', captureBodySelection);
   refs.highlightColorInput.addEventListener('change', () => {
     applyInlineFormat(() => createFormatElement('hl', refs.highlightColorInput.value), 'hl');
   });
-  refs.btnClearHighlight.addEventListener('mousedown', captureBodySelection);
+  keepBodyFocus(refs.btnClearHighlight);
   refs.btnClearHighlight.addEventListener('click', () => clearFormatType('hl', '選択範囲にハイライトは設定されていません'));
-  refs.btnClearFormat.addEventListener('mousedown', captureBodySelection);
+  keepBodyFocus(refs.btnClearFormat);
   refs.btnClearFormat.addEventListener('click', resetFormatToDefault);
 
   /* --- 画像 --- */
@@ -432,6 +467,20 @@ function bindEvents() {
     state.thumbSize = Number(refs.thumbSize.value);
     applyThumbSize();
     savePrefDebounced('thumbSize', state.thumbSize);
+  });
+
+  /* --- 添付ファイル --- */
+  refs.btnAddAttach.addEventListener('click', () => refs.attachInput.click());
+  refs.attachInput.addEventListener('change', () => {
+    if (refs.attachInput.files.length > 0) addAttachmentFiles(refs.attachInput.files);
+    refs.attachInput.value = '';
+  });
+  refs.attachList.addEventListener('click', e => {
+    const li = e.target.closest('.attach-item');
+    if (!li) return;
+    const id = Number(li.dataset.id);
+    if (e.target.closest('.attach-del')) { removeAttachment(id); return; }
+    downloadAttachment(id);   /* 行のどこを押してもダウンロード */
   });
   /* --- 画像パネルの幅をドラッグで調整 --- */
   refs.imgPanelResizer.addEventListener('mousedown', e => {
@@ -527,6 +576,12 @@ function bindEvents() {
       e.preventDefault();
       if (e.repeat) return;   /* 押しっぱなしのキーリピートで保存を繰り返さない */
       if (!refs.sheet.hidden) saveCurrent();
+    }
+    /* Ctrl+Shift+V：次の1回だけ書式を捨てて貼り付ける。
+       ブラウザの貼り付け自体は止められないので、paste ハンドラ側で
+       このフラグを見てプレーンテキストとして処理する */
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+      pastePlainOnce = true;
     }
   });
 

@@ -6,7 +6,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.4.2';
+const APP_VERSION = '1.5.0';
 
 /* ============================================================
    ユーティリティ
@@ -75,7 +75,7 @@ function insertAtCaret(el, text, caretOffset = null) {
    IndexedDB ラッパー
    ============================================================ */
 const DB_NAME = 'memoStudioDB';
-const DB_VER  = 2;
+const DB_VER  = 3;   /* 3: 添付ファイル(files)ストアを追加 */
 let db = null;
 
 function openDB() {
@@ -99,6 +99,11 @@ function openDB() {
       }
       if (!d.objectStoreNames.contains('tags')) {
         d.createObjectStore('tags', { keyPath: 'name' });
+      }
+      /* 添付ファイル。画像と同じくメモ単位で持ち、Blob をそのまま格納する */
+      if (!d.objectStoreNames.contains('files')) {
+        const s = d.createObjectStore('files', { keyPath: 'id', autoIncrement: true });
+        s.createIndex('memoId', 'memoId');
       }
     };
     rq.onsuccess = () => resolve(rq.result);
@@ -138,7 +143,7 @@ const countTags  = memos => countBy(memos, m => m.tags || []);
 const countMarks = memos => countBy(memos, m => (m.mark && markById(m.mark)) ? [m.mark] : []);
 
 const state = {
-  memos: [], formats: [], images: [], tagsMaster: [],
+  memos: [], formats: [], images: [], attachments: [], tagsMaster: [],
   currentId: null,
   currentMark: null,
   dirty: false, savedAt: null,
@@ -164,13 +169,13 @@ function collectRefs() {
     'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime','btnShowMarks',
-    'btnBold','btnItalic','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
+    'btnBold','btnItalic','fontFamilySelect','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
     'btnClearTextColor','btnClearHighlight',
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
     'imgPanel','imgPanelResizer','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
-    'thumbSize','thumbGrid','imgEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
+    'thumbSize','thumbGrid','imgEmpty','attachCount','btnAddAttach','attachInput','attachList','attachEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
     'lbClose','lbStage','lbImg','lbPrev','lbNext',
     'manageModal','mgmtClose','mgmtNavFormats','mgmtNavTags','mgmtFormatCount','mgmtTagCount','mgmtSectionFormats','mgmtSectionTags',
@@ -203,6 +208,10 @@ const MODAL_GRACE_MS = 400;
 const modalOpenedAt = new WeakMap();
 function markModalOpened(el) { modalOpenedAt.set(el, performance.now()); }
 function backdropClickAllowed(el) { return performance.now() - (modalOpenedAt.get(el) || 0) > MODAL_GRACE_MS; }
+
+/* Ctrl+Shift+V / 「書式なしで貼り付け」を押した直後の1回だけ立つフラグ。
+   貼り付け処理はブラウザの paste イベント側で行うため、ここで意図を渡す */
+let pastePlainOnce = false;
 
 let dialogResolve = null;
 /* fields を渡すと入力欄付きのダイアログになる。決定時は

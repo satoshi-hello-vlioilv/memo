@@ -52,10 +52,15 @@ function buildCtxMenu(ctx) {
       { act: 'clipCut',   icon: 'fa-scissors',      label: '切り取り', keys: 'Ctrl+X', need: true },
       { act: 'clipCopy',  icon: 'fa-copy',          label: 'コピー',   keys: 'Ctrl+C', need: true },
       { act: 'clipPaste', icon: 'fa-paste',         label: '貼り付け', keys: 'Ctrl+V' },
+      { act: 'clipPastePlain', icon: 'fa-file-lines', label: '書式なしで貼り付け', keys: 'Ctrl+Shift+V',
+        title: '文字だけを貼り付けます（色やサイズなどは持ち込みません）' },
     ]},
     { head: '書式', items: [
       { act: 'fmtBold',   icon: 'fa-bold',   label: '太字',   keys: '切替', need: true },
       { act: 'fmtItalic', icon: 'fa-italic', label: '斜体',   keys: '切替', need: true },
+    ], fonts: [
+      { act: 'fontReset', label: '既定' },
+      ...BODY_FONTS.map(f => ({ act: 'font:' + f.id, label: f.label, css: f.css })),
     ], sizes: [
       { act: 'size12', label: '小' },
       { act: 'size15', label: '標準' },
@@ -116,6 +121,14 @@ function buildCtxMenu(ctx) {
     }
     if (s.head) html += `<div class="ctx-head">${s.head}</div>`;
     if (s.items) html += renderItems(s.items);
+    if (s.fonts) {
+      const dis = hasSel ? '' : ' disabled';
+      html += `<div class="ctx-row-label">フォント</div><div class="ctx-row">` +
+        s.fonts.map(f =>
+          `<button class="ctx-font" data-act="${f.act}"${dis}` +
+          (f.css ? ` style="font-family:${esc(f.css)}"` : '') + `>${esc(f.label)}</button>`).join('') +
+        `</div>`;
+    }
     if (s.sizes) {
       const dis = hasSel ? '' : ' disabled';
       html += `<div class="ctx-row-label">文字サイズ</div><div class="ctx-row">` +
@@ -185,9 +198,11 @@ function runCtxAction(act) {
     case 'fmtItalic':   runCtxFormat(toggleItalic); break;
     case 'fmtReset':    runCtxFormat(resetFormatToDefault); break;
     case 'colorReset':  runCtxFormat(() => clearFormatType('color', '選択範囲に文字色は設定されていません')); break;
+    case 'fontReset':   runCtxFormat(() => clearFormatType('font', '選択範囲にフォントは設定されていません')); break;
     case 'clipCut':     clipboardCut(selText); break;
     case 'clipCopy':    clipboardCopy(selText); break;
     case 'clipPaste':   clipboardPaste(); break;
+    case 'clipPastePlain': clipboardPastePlain(); break;
     case 'linkEdit':    insertOrEditLink(); break;
     case 'linkOpen':    openLinkAt(ctxLinkEl); break;
     case 'linkUnset':
@@ -201,6 +216,9 @@ function runCtxAction(act) {
       if (/^size\d+$/.test(act)) {
         const px = act.slice(4);
         runCtxFormat(() => applyInlineFormat(() => createFormatElement('size', px), 'size'));
+      } else if (act.startsWith('font:')) {
+        const id = act.slice(5);
+        runCtxFormat(() => applyInlineFormat(() => createFormatElement('font', id), 'font'));
       } else if (act.startsWith('color:')) {
         const hex = act.slice(6);
         runCtxFormat(() => applyInlineFormat(() => createFormatElement('color', hex), 'color'));
@@ -252,6 +270,23 @@ async function clipboardPaste() {
   }
   if (!text) { toast('クリップボードに文字がありません', 'info'); return; }
   insertBodyText(text);   /* 表示の更新は insertBodyText 内の afterBodyEdit がまとめて行う */
+}
+
+/* 書式なしで貼り付け。readText() は元々プレーンテキストしか返さないため、
+   ここで読めた場合はそのまま挿入すればよい。読み取りが拒否される環境では
+   次の Ctrl+V を1回だけプレーン扱いにするフラグを立てて案内する */
+async function clipboardPastePlain() {
+  let text = '';
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    pastePlainOnce = true;
+    toast('このまま Ctrl+V を押すと、書式なしで貼り付けます', 'info');
+    return;
+  }
+  if (!text) { toast('クリップボードに文字がありません', 'info'); return; }
+  insertBodyText(text);
+  toast('書式なしで貼り付けました', 'success');
 }
 
 /* 書式系のアクションは savedBodyRange を参照するため、メニューを開いた時点の

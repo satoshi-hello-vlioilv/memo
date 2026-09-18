@@ -226,7 +226,8 @@ function handleDroppedFiles(fileList) {
     addImageFiles(imageFiles);
     return;
   }
-  toast('対応していないファイルです（画像 または JSON データをドロップしてください）', 'error');
+  /* 画像でも JSON でもないものは添付ファイルとして受け取る */
+  addAttachmentFiles(files);
 }
 
 function setupDragDrop() {

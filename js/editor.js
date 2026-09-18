@@ -46,6 +46,7 @@ function showWelcome() {
   state.currentMark = null;
   state.dirty = false;
   loadImages();
+  loadAttachments();
 }
 function markDirty() {
   if (!state.dirty) { state.dirty = true; renderSaveState(); }
@@ -103,6 +104,7 @@ async function openMemo(id) {
   showSheet();
   renderEditorMeta(); renderList();
   await loadImages();
+  await loadAttachments();
   deserializeBody(m.body || '');
   renderCharCount();
   savePref('lastMemoId', id);
@@ -119,6 +121,7 @@ function newMemo() {
   showSheet();
   renderEditorMeta(); renderCharCount(); renderList();
   loadImages();
+  loadAttachments();
   refs.titleInput.focus();
 }
 /* 保存できたら true、失敗したら false を返す（例外は投げない）。
@@ -165,14 +168,16 @@ async function deleteCurrent() {
   }
   const m = state.memos.find(x => x.id === state.currentId);
   const imgNote = (m?.imageCount || 0) > 0 ? `\n登録済みの画像 ${m.imageCount} 件も同時に削除されます。` : '';
+  const fileNote = (m?.fileCount || 0) > 0 ? `\n添付ファイル ${m.fileCount} 件も同時に削除されます。` : '';
   const ok = await confirmDialog({
     title: 'メモの削除',
-    message: `「${m?.title || '無題のメモ'}」を削除します。この操作は取り消せません。${imgNote}`,
+    message: `「${m?.title || '無題のメモ'}」を削除します。この操作は取り消せません。${imgNote}${fileNote}`,
     okLabel: '削除する',
   });
   if (!ok) return;
   const imgs = await Store.byIndex('images', 'memoId', state.currentId);
   for (const img of imgs) await Store.del('images', img.id);
+  await deleteAttachmentsOfMemo(state.currentId);
   await Store.del('memos', state.currentId);
   await refreshMemos();
   showWelcome();

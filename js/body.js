@@ -82,9 +82,35 @@ function safeLinkUrl(raw) {
   return 'https://' + url;
 }
 
-/* 書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex] [link=URL])に対応する要素を
-   生成する。size/color/hl はインライン style で表現し、シリアライズ時に
-   判別できるよう data-fmt 属性を付ける */
+/* 本文で選べるフォント。保存データには id だけを書き出し、実際の
+   font-family はこの表から引く。生の CSS を保存形式に入れないことで、
+   壊れた・悪意のある指定がそのままスタイルに流れ込むのを防ぐ */
+const BODY_FONTS = [
+  { id: 'gothic', label: 'ゴシック体', css: '"Yu Gothic UI","Hiragino Sans","Noto Sans JP","Meiryo",sans-serif' },
+  { id: 'mincho', label: '明朝体',     css: '"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP","MS Mincho",serif' },
+  { id: 'maru',   label: '丸ゴシック', css: '"Hiragino Maru Gothic ProN","Rounded Mplus 1c","Meiryo",sans-serif' },
+  { id: 'mono',   label: '等幅',       css: '"Cascadia Code","Consolas","Courier New",monospace' },
+  { id: 'serif',  label: 'Serif',      css: 'Georgia,"Times New Roman",serif' },
+  { id: 'sans',   label: 'Sans',       css: 'Arial,Helvetica,sans-serif' },
+];
+const fontById = id => BODY_FONTS.find(f => f.id === id) || null;
+/* 外部からコピーした font-family 文字列を、いちばん近い選択肢へ寄せる */
+function fontIdFromCss(css) {
+  const s = String(css || '').toLowerCase();
+  if (!s) return null;
+  if (/mincho|serif jp|times|georgia|serif/.test(s)) {
+    return /times|georgia/.test(s) && !/mincho|jp/.test(s) ? 'serif' : 'mincho';
+  }
+  if (/mono|consolas|courier|cascadia/.test(s)) return 'mono';
+  if (/maru|rounded/.test(s)) return 'maru';
+  if (/gothic|hiragino|noto sans|meiryo/.test(s)) return 'gothic';
+  if (/arial|helvetica|sans-serif/.test(s)) return 'sans';
+  return null;
+}
+
+/* 書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex] [font=id] [link=URL])に
+   対応する要素を生成する。size/color/hl/font はインライン style で表現し、
+   シリアライズ時に判別できるよう data-fmt 属性を付ける */
 function createFormatElement(tag, param) {
   if (tag === 'b') return document.createElement('b');
   if (tag === 'i') return document.createElement('i');
@@ -109,6 +135,12 @@ function createFormatElement(tag, param) {
     span.style.color = param;
   } else if (tag === 'hl' && /^#[0-9a-fA-F]{6}$/.test(param || '')) {
     span.style.backgroundColor = param;
+  } else if (tag === 'font') {
+    const f = fontById(param);
+    /* 未知のフォント id は書式として扱わず、中身だけ残す */
+    if (!f) { const plain = document.createElement('span'); return plain; }
+    span.dataset.font = f.id;
+    span.style.fontFamily = f.css;
   }
   return span;
 }
@@ -123,8 +155,8 @@ function createFormatElement(tag, param) {
    lastIndex が 0 にリセットされるため、閉じタグの無い開始タグ(ユーザーが
    文字通り「[b]」と入力した場合など)で呼び出し元が先頭から再走査してしまい、
    無限ループでアプリ全体がフリーズする致命的な不具合があった。 */
-const BODY_TOKEN_RE = /\[img:(?<imgId>\d+)(?::(?<imgAlign>[lcr]))?(?::(?<imgSize>[sml]|\d+|fit))?\]|\[(?<close>\/)?(?<tag>b|i|size|color|hl|link)(?:=(?<param>[^\]]*))?\]/g;
-const BODY_FMT_TAGS = ['b', 'i', 'size', 'color', 'hl', 'link'];
+const BODY_TOKEN_RE = /\[img:(?<imgId>\d+)(?::(?<imgAlign>[lcr]))?(?::(?<imgSize>[sml]|\d+|fit))?\]|\[(?<close>\/)?(?<tag>b|i|size|color|hl|font|link)(?:=(?<param>[^\]]*))?\]/g;
+const BODY_FMT_TAGS = ['b', 'i', 'size', 'color', 'hl', 'font', 'link'];
 function textToFragment(text) {
   let pos = 0;
   /* 各タグの閉じタグ位置を先に列挙しておく。開始タグごとに indexOf で後方を
@@ -181,6 +213,88 @@ function textToFragment(text) {
   return parse(null);
 }
 
+/* ============================================================
+   外部からの貼り付け（HTML の取り込み）
+   ============================================================ */
+/* 貼り付けられた HTML を、本文が扱える書式だけに変換する。
+
+   これを通さずにブラウザ既定の貼り付けに任せると、<u> や <font>、
+   外部サイトの style がそのまま本文へ入り込む。本文の保存形式はここで
+   定義された書式しか表現できないため、画面では効いているように見えても
+   保存すると消える（＝書式が不安定に見える）。取り込み時点で対応する
+   書式へ寄せるか捨てるかを決め、見た目と保存内容を一致させる。 */
+function htmlToBodyFragment(html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  /* スクリプト等は解析前に落とす（template の中身は実行されないが、
+     以降の走査対象にもしない） */
+  tpl.content.querySelectorAll('script, style, meta, link, title, noscript, iframe, object, embed')
+    .forEach(el => el.remove());
+
+  const BLOCK = new Set(['P', 'DIV', 'LI', 'TR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+    'BLOCKQUOTE', 'PRE', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'UL', 'OL', 'TABLE']);
+
+  const out = document.createDocumentFragment();
+  /* 直前に改行を出したかを持ち回り、空行が延々と増えるのを防ぐ */
+  let atLineStart = true;
+  const pushText = (parent, text) => {
+    if (!text) return;
+    addTextWithBreaks(parent, text);
+    atLineStart = /\n$/.test(text);
+  };
+  const pushBreak = parent => {
+    if (atLineStart) return;
+    parent.appendChild(document.createElement('br'));
+    atLineStart = true;
+  };
+
+  /* 要素から、本文が扱える書式ラッパーを組み立てる（無ければ null） */
+  const wrappersFor = el => {
+    const tags = [];
+    const st = el.style || {};
+    const tag = el.tagName;
+    if (tag === 'B' || tag === 'STRONG' || /^(bold|[6-9]00)$/.test(String(st.fontWeight || ''))) tags.push(['b']);
+    if (tag === 'I' || tag === 'EM' || String(st.fontStyle || '') === 'italic') tags.push(['i']);
+    if (tag === 'A') {
+      const url = safeLinkUrl(el.getAttribute('href'));
+      if (url && !url.includes(']')) tags.push(['link', url]);
+    }
+    const px = parseInt(st.fontSize, 10);
+    if (Number.isFinite(px) && px >= 8 && px <= 72) tags.push(['size', String(px)]);
+    const col = rgbToHex(st.color);
+    if (col) tags.push(['color', col]);
+    const bg = rgbToHex(st.backgroundColor);
+    if (bg && bg !== '#ffffff') tags.push(['hl', bg]);
+    const fid = fontIdFromCss(st.fontFamily || el.getAttribute('face'));
+    if (fid) tags.push(['font', fid]);
+    return tags;
+  };
+
+  const walk = (node, parent) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        /* HTML の空白畳み込みに合わせ、連続する空白は1つにまとめる */
+        pushText(parent, child.textContent.replace(/[ \t\r\n]+/g, ' '));
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      if (child.tagName === 'BR') { pushBreak(parent); continue; }
+      const isBlock = BLOCK.has(child.tagName);
+      if (isBlock) pushBreak(parent);
+      let target = parent;
+      for (const [t, param] of wrappersFor(child)) {
+        const el = createFormatElement(t, param);
+        target.appendChild(el);
+        target = el;
+      }
+      walk(child, target);
+      if (isBlock) pushBreak(parent);
+    }
+  };
+  walk(tpl.content, out);
+  return out;
+}
+
 /* rgb(r, g, b) / rgba(r, g, b, a) 形式の computed style 値を #rrggbb に変換する。
    要素の style.color 等はブラウザ側で常に rgb() 表記に正規化されて返る */
 function rgbToHex(rgbStr) {
@@ -226,6 +340,10 @@ function serializeBody() {
       } else if (fmt === 'hl') {
         const hex = rgbToHex(node.style.backgroundColor);
         if (hex) wrapTag(node, `[hl=${hex}]`, '[/hl]');
+        else for (const c of node.childNodes) walk(c);
+      } else if (fmt === 'font') {
+        const id = node.dataset.font;
+        if (fontById(id)) wrapTag(node, `[font=${id}]`, '[/font]');
         else for (const c of node.childNodes) walk(c);
       } else if (fmt === 'link') {
         /* URL に ] が含まれるとマーカーが壊れるため、その場合は
@@ -399,6 +517,34 @@ function insertBodyText(text, caretAt = null) {
       sel.removeAllRanges();
       sel.addRange(nr);
     }
+  }
+  afterBodyEdit();
+}
+
+/* すでに組み立て済みのフラグメント（貼り付けの変換結果など）を
+   キャレット位置へ挿入する。挿入位置の決め方は insertBodyText と同じ */
+function insertBodyFragment(frag) {
+  if (!frag || !frag.firstChild) return;
+  const sel = window.getSelection();
+  const current = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+  const target = current && refs.bodyInput.contains(current.commonAncestorContainer)
+    ? current.cloneRange() : null;
+  refs.bodyInput.focus();
+  let range = target;
+  if (!range) {
+    range = document.createRange();
+    range.selectNodeContents(refs.bodyInput);
+    range.collapse(false);
+  }
+  range.deleteContents();
+  const last = frag.lastChild;
+  range.insertNode(frag);
+  if (last && sel) {
+    const nr = document.createRange();
+    nr.setStartAfter(last);
+    nr.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(nr);
   }
   afterBodyEdit();
 }

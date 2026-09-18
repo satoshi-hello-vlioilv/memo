@@ -115,6 +115,16 @@
         <div class="tool-group">
           <button id="btnBold" class="icon-btn" title="太字"><i class="fa-solid fa-bold"></i></button>
           <button id="btnItalic" class="icon-btn" title="斜体"><i class="fa-solid fa-italic"></i></button>
+          <select id="fontFamilySelect" class="fmt-select fmt-select--sm" title="フォント">
+            <option value="">フォント</option>
+            <option value="reset">フォント解除</option>
+            <option value="gothic">ゴシック体</option>
+            <option value="mincho">明朝体</option>
+            <option value="maru">丸ゴシック</option>
+            <option value="mono">等幅</option>
+            <option value="serif">Serif</option>
+            <option value="sans">Sans</option>
+          </select>
           <select id="fontSizeSelect" class="fmt-select fmt-select--sm" title="文字サイズ">
             <option value="">サイズ</option>
             <option value="reset">サイズ解除</option>
@@ -198,6 +208,16 @@
     <div class="img-empty" id="imgEmpty">
       <i class="fa-regular fa-image"></i>
       <span>このメモに画像はありません。<br>「画像を追加」またはドラッグ&amp;ドロップ、<br>本文への貼り付け（Ctrl+V）で登録できます。</span>
+    </div>
+
+    <div class="attach-head">
+      <span class="panel-title"><i class="fa-regular fa-paperclip"></i> 添付ファイル <span id="attachCount" class="count-badge mono">0</span></span>
+      <button id="btnAddAttach" class="icon-btn" title="ファイルを添付"><i class="fa-solid fa-plus"></i></button>
+      <input type="file" id="attachInput" multiple="" hidden="">
+    </div>
+    <ul class="attach-list" id="attachList"></ul>
+    <div class="attach-empty" id="attachEmpty">
+      画像以外のファイルを添付できます。<br>「＋」またはドラッグ&amp;ドロップ、貼り付けで登録できます。
     </div>
   </aside>
 
@@ -365,6 +385,7 @@
 <script src="js/text-format.js"></script>
 <script src="js/ctxmenu.js"></script>
 <script src="js/images.js"></script>
+<script src="js/files.js"></script>
 <script src="js/speech.js"></script>
 <script src="js/formats.js"></script>
 <script src="js/data.js"></script>

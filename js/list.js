@@ -50,7 +50,7 @@ function sortField() {
   return state.groupByDate ? state.groupDateField : 'updatedAt';
 }
 const BODY_IMG_MARKER_RE = /\[img:\d+(?::[lcr])?(?::(?:[sml]|\d+|fit))?\]/g;
-const BODY_FMT_TAG_RE = /\[\/?(?:b|i|size(?:=\d{1,3})?|color(?:=#[0-9a-fA-F]{6})?|hl(?:=#[0-9a-fA-F]{6})?|link(?:=[^\]]*)?)\]/g;
+const BODY_FMT_TAG_RE = /\[\/?(?:b|i|size(?:=\d{1,3})?|color(?:=#[0-9a-fA-F]{6})?|hl(?:=#[0-9a-fA-F]{6})?|font(?:=[a-z]+)?|link(?:=[^\]]*)?)\]/g;
 const stripMarkers = text => String(text ?? '')
   .replace(BODY_IMG_MARKER_RE, ' ')
   .replace(BODY_FMT_TAG_RE, '')

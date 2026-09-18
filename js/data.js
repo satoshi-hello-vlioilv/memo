@@ -152,7 +152,9 @@ async function exportData({ memoIds = null } = {}) {
     schema: EXPORT_SCHEMA,
     appVersion: APP_VERSION,
     exportedAt: Date.now(),
-    memos: targets,
+    /* plainBody は本文から作り直せる検索用の控えなので書き出さない
+       （そのまま入れるとファイルがおよそ倍の大きさになる） */
+    memos: targets.map(({ plainBody, ...m }) => m),
     formats: state.formats,
     tags: state.tagsMaster,
   };

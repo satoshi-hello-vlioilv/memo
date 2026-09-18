@@ -6,7 +6,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 /* ============================================================
    ユーティリティ
@@ -75,7 +75,10 @@ function insertAtCaret(el, text, caretOffset = null) {
    IndexedDB ラッパー
    ============================================================ */
 const DB_NAME = 'memoStudioDB';
-const DB_VER  = 3;   /* 3: 添付ファイル(files)ストアを追加 */
+/* 3: 添付ファイル(files)ストアを追加
+   4: 自動保存(drafts)ストアを追加し、メモへ検索用テキスト(plainBody)と
+      ゴミ箱用の deletedAt を持たせた */
+const DB_VER  = 4;
 let db = null;
 
 function openDB() {
@@ -83,6 +86,7 @@ function openDB() {
     const rq = indexedDB.open(DB_NAME, DB_VER);
     rq.onupgradeneeded = e => {
       const d = e.target.result;
+      const tx = e.target.transaction;
       if (!d.objectStoreNames.contains('memos')) {
         const s = d.createObjectStore('memos', { keyPath: 'id', autoIncrement: true });
         s.createIndex('updatedAt', 'updatedAt');
@@ -104,6 +108,25 @@ function openDB() {
       if (!d.objectStoreNames.contains('files')) {
         const s = d.createObjectStore('files', { keyPath: 'id', autoIncrement: true });
         s.createIndex('memoId', 'memoId');
+      }
+      /* 自動保存の下書き。key は 'memo:<id>'（保存済みメモの編集中内容）
+         または 'new'（まだ保存していない新規メモ） */
+      if (!d.objectStoreNames.contains('drafts')) {
+        d.createObjectStore('drafts', { keyPath: 'key' });
+      }
+      /* 既存メモへ検索用テキストとゴミ箱用の項目を補完する。ここで一度作って
+         おけば、検索のたびに全メモの本文へ正規表現をかけ直さずに済む */
+      if (e.oldVersion > 0 && e.oldVersion < 4) {
+        const cur = tx.objectStore('memos').openCursor();
+        cur.onsuccess = ev => {
+          const c = ev.target.result;
+          if (!c) return;
+          const m = c.value;
+          if (typeof m.plainBody !== 'string' || m.deletedAt === undefined) {
+            c.update({ ...m, plainBody: buildPlainBody(m.body), deletedAt: m.deletedAt ?? null });
+          }
+          c.continue();
+        };
       }
     };
     rq.onsuccess = () => resolve(rq.result);
@@ -147,14 +170,19 @@ const state = {
   currentId: null,
   currentMark: null,
   dirty: false, savedAt: null,
-  query: '', tagFilter: null, imageOnly: false, markFilter: null,
+  query: '', tagFilter: null, imageOnly: false, fileOnly: false, markFilter: null,
   searchScope: { title: true, tags: true, body: true },
   searchHistory: [],
   thumbSize: 160, panelOpen: true, sidebarOpen: true,
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
-  sortDir: 'desc',
+  sortDir: 'desc', sortKey: 'updatedAt',
   showLineMarks: false,
   imgPanelWidth: 352,
+  /* ゴミ箱（論理削除したメモの表示）と一覧の選択モード */
+  trashView: false,
+  selectMode: false, selected: new Set(),
+  /* 自動保存された下書き（key -> 概要）。一覧の印と復元の判定に使う */
+  drafts: new Map(),
 };
 
 /* ============================================================
@@ -164,13 +192,16 @@ const refs = {};
 function collectRefs() {
   const ids = [
     'app','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'searchInput','searchClear','searchScope','searchSuggest','markBar','tagBar','listCount','btnImageFilter','btnGroupByDate','groupFieldSelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'sidebarTitle','btnTrash','trashBar','trashCount','btnEmptyTrash','btnExitTrash',
+    'searchInput','searchClear','searchScope','searchSuggest','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'bulkBar','bulkCount','btnBulkAll','bulkAllLabel','bulkNormalActs','bulkTrashActs','btnBulkTag','bulkMarkSelect','btnBulkExport','btnBulkTrash','btnBulkRestore','btnBulkPurge',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagsSuggest','tagsPreview',
     'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnMic','recIndicator','recTime','btnShowMarks',
-    'btnBold','btnItalic','fontFamilySelect','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
+    'btnUndo','btnRedo','blockSelect','btnBold','btnItalic','btnLink','fontFamilySelect','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
     'btnClearTextColor','btnClearHighlight',
+    'findBar','findInput','findCount','findPrev','findNext','replaceInput','findReplace','findReplaceAll','findClose',
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
@@ -178,7 +209,7 @@ function collectRefs() {
     'thumbSize','thumbGrid','imgEmpty','attachCount','btnAddAttach','attachInput','attachList','attachEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
     'lbClose','lbStage','lbImg','lbPrev','lbNext',
-    'manageModal','mgmtClose','mgmtNavFormats','mgmtNavTags','mgmtFormatCount','mgmtTagCount','mgmtSectionFormats','mgmtSectionTags',
+    'manageModal','mgmtClose','mgmtNavFormats','mgmtNavTags','mgmtNavKeys','mgmtFormatCount','mgmtTagCount','mgmtSectionFormats','mgmtSectionTags','mgmtSectionKeys','keysBody',
     'fmNew','fmList','fmEmpty','fmName','fmContent','fmDelete','fmSave',
     'dialogRoot','dlgTitle','dlgMsg','dlgFoot','toastWrap','fatal','fatalMsg',
   ];
@@ -188,17 +219,30 @@ function collectRefs() {
 /* ============================================================
    トースト・ダイアログ（フィードバック／エラー防止）
    ============================================================ */
-function toast(msg, type = 'info') {
+/* action に { label, onClick } を渡すと、トースト内に取り消しなどの
+   ボタンを出す（押されるまで少し長めに表示する） */
+function toast(msg, type = 'info', action = null) {
   const icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' };
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.innerHTML = `<i class="fa-solid ${icons[type]}"></i><span>${esc(msg)}</span>`;
-  refs.toastWrap.appendChild(el);
-  requestAnimationFrame(() => el.classList.add('show'));
-  setTimeout(() => {
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
     el.classList.remove('show');
     setTimeout(() => el.remove(), 260);
-  }, 2800);
+  };
+  if (action) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => { close(); action.onClick(); });
+    el.appendChild(btn);
+  }
+  refs.toastWrap.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(close, action ? 8000 : 2800);
 }
 
 /* モーダルを開いたボタンをダブルクリックすると、2回目のクリックが直後に
@@ -300,6 +344,7 @@ async function loadPrefs() {
     if (typeof map.groupByDate === 'boolean') state.groupByDate = map.groupByDate;
     if (map.groupDateField === 'createdAt' || map.groupDateField === 'updatedAt') state.groupDateField = map.groupDateField;
     if (map.sortDir === 'asc' || map.sortDir === 'desc') state.sortDir = map.sortDir;
+    if (['updatedAt', 'createdAt', 'title'].includes(map.sortKey)) state.sortKey = map.sortKey;
     if (map.searchScope && typeof map.searchScope === 'object') {
       const s = map.searchScope;
       if (typeof s.title === 'boolean' && typeof s.tags === 'boolean' && typeof s.body === 'boolean'
@@ -311,6 +356,7 @@ async function loadPrefs() {
       state.searchHistory = map.searchHistory.filter(h => typeof h === 'string' && h).slice(0, 8);
     }
     if (typeof map.imageOnly === 'boolean') state.imageOnly = map.imageOnly;
+    if (typeof map.fileOnly === 'boolean') state.fileOnly = map.fileOnly;
     if (typeof map.showLineMarks === 'boolean') state.showLineMarks = map.showLineMarks;
     if (typeof map.imgPanelWidth === 'number') state.imgPanelWidth = map.imgPanelWidth;
     return map;
@@ -320,3 +366,9 @@ function savePref(key, value) {
   Store.put('prefs', { key, value }).catch(() => {});
 }
 const savePrefDebounced = debounce(savePref, 350);
+
+/* テストから読み込むための書き出し（ブラウザでは module が無いので何もしない） */
+if (typeof module === 'object' && module.exports) {
+  module.exports = { esc, pad, parseTags, tagClass, countBy, serialized, debounce,
+    fmtDate, fmtTime, fmtDateTime, fmtWeekday, MEMO_MARKS, markById };
+}

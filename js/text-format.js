@@ -119,7 +119,10 @@ function unwrapElement(el) {
 const isBoldEl      = el => el.tagName === 'B' || el.tagName === 'STRONG';
 const isItalicEl    = el => el.tagName === 'I' || el.tagName === 'EM';
 const isLinkEl      = el => el.tagName === 'A' && !!(el.dataset && el.dataset.fmt === 'link');
-const isAnyFormatEl = el => isBoldEl(el) || isItalicEl(el) || !!(el.dataset && el.dataset.fmt);
+/* 「標準に戻す」の対象。段落書式（見出し・箇条書き・チェックリスト）は
+   文字の装飾ではなく行の種類なので、ここでは外さない（段落セレクトで変える） */
+const isAnyFormatEl = el => isBoldEl(el) || isItalicEl(el) ||
+  (!!(el.dataset && el.dataset.fmt) && !isBlockFmtEl(el));
 const isFmtType = type => el => !!(el.dataset && el.dataset.fmt === type);
 
 /* 分割・解除の結果、中身が空になった書式要素を取り除く。残しておくと
@@ -128,6 +131,9 @@ const isFmtType = type => el => !!(el.dataset && el.dataset.fmt === type);
 function pruneEmptyFormatEls() {
   for (const el of $$('[data-fmt], b, strong, i, em', refs.bodyInput)) {
     if (el.closest('.body-img')) continue;
+    /* 中身が空の段落（書きかけの箇条書きなど）は消さない。消すとその行自体が
+       無くなり、入力しようとした行が勝手に畳まれてしまう */
+    if (isBlockFmtEl(el)) continue;
     if (el.textContent.length === 0 && !el.querySelector('br, img, .body-img')) el.remove();
   }
 }
@@ -266,6 +272,7 @@ function wrapTextNodes(range, textNodes, makeEl, skip = null) {
 function applyInlineFormat(makeEl, fmtType) {
   let range = requireBodySelection('書式を適用するテキストを選択してください');
   if (!range) return;
+  pushHistory();   /* 「元に戻す」で1操作ぶんとして戻れるようにする */
   /* 同種の書式を先に剥がしてから包み直す（入れ子の蓄積を防ぐ） */
   if (fmtType) {
     const cleared = clearFormatInRange(range, isFmtType(fmtType));
@@ -285,6 +292,7 @@ function applyInlineFormat(makeEl, fmtType) {
 function toggleTagFormat(matchTag, makeEl) {
   const range = requireBodySelection('書式を適用するテキストを選択してください');
   if (!range) return;
+  pushHistory();
   const textNodes = getSelectedTextNodesInRange(range);
   const hasAncestor = node => !!closestFormatEl(node, matchTag);
   /* 選択範囲がすべて適用済みなら解除する。選択した文字だけに効かせるため、
@@ -308,6 +316,7 @@ function clearFormatMatching(predicate, emptyMessage) {
   const range = window.getSelection().getRangeAt(0);
   const textNodes = getSelectedTextNodesInRange(range);
   if (!textNodes.some(node => closestFormatEl(node, predicate))) { toast(emptyMessage, 'info'); return; }
+  pushHistory();
   const cleared = clearFormatInRange(range, predicate);
   if (cleared) setBodySelection(cleared);
   afterBodyEdit();
@@ -323,6 +332,7 @@ const toggleItalic = () => toggleTagFormat(isItalicEl, () => document.createElem
 function resetFormatToDefault() {
   const range = requireBodySelection('標準に戻すテキストを選択してください');
   if (!range) return;
+  pushHistory();
   const cleared = clearFormatInRange(range, isAnyFormatEl);
   if (cleared) setBodySelection(cleared);
   afterBodyEdit();
@@ -444,4 +454,8 @@ function updateFormatToolbarState() {
     refs.bodyInput.contains(sel.getRangeAt(0).commonAncestorContainer);
   refs.btnBold.classList.toggle('active', focused && !!closestFormatEl(sel.anchorNode, isBoldEl));
   refs.btnItalic.classList.toggle('active', focused && !!closestFormatEl(sel.anchorNode, isItalicEl));
+  refs.btnLink.classList.toggle('active', focused && !!closestFormatEl(sel.anchorNode, isLinkEl));
+  /* いまカーソルがある行の段落種別をセレクトへ映す */
+  refs.blockSelect.value = focused ? (currentBlockKind() || '') : '';
+  updateHistoryButtons();
 }

@@ -8,10 +8,14 @@
    メモ：編集・保存・削除
    ============================================================ */
 function collectFields() {
+  const body = serializeBody();
   return {
     title: refs.titleInput.value.trim(),
     tags : parseTags(refs.tagsInput.value),
-    body : serializeBody(),
+    body,
+    /* 検索用のテキストを保存時に作っておく。検索のたびに全メモの本文から
+       マーカーを取り除き直さずに済む（list.js の絞り込みが使う） */
+    plainBody: buildPlainBody(body),
     mark : state.currentMark,
   };
 }
@@ -50,6 +54,8 @@ function showWelcome() {
 }
 function markDirty() {
   if (!state.dirty) { state.dirty = true; renderSaveState(); }
+  /* 保存を押す前にタブが閉じても書きかけが残るよう、下書きを退避する */
+  scheduleDraftSave();
 }
 function renderSaveState() {
   const el = refs.saveState;
@@ -86,6 +92,7 @@ function renderEditorMeta() {
    余分に呼んでも副作用は無い */
 function afterBodyEdit() {
   markDirty();
+  recordHistoryAfterInput();
   renderCharCount();
   rebuildLineMarksDebounced();
   updateCursorHighlight();
@@ -95,6 +102,7 @@ function afterBodyEdit() {
 async function openMemo(id) {
   const m = await Store.get('memos', id);
   if (!m) { toast('メモが見つかりません', 'error'); return; }
+  closeFindBar();
   state.currentId = id;
   state.dirty = false;
   state.savedAt = m.updatedAt;
@@ -107,9 +115,13 @@ async function openMemo(id) {
   await loadAttachments();
   deserializeBody(m.body || '');
   renderCharCount();
+  resetHistory();
   savePref('lastMemoId', id);
+  /* 前回の編集が保存されないまま残っていれば、ここで復元を尋ねる */
+  await maybeRestoreDraft(id);
 }
 function newMemo() {
+  closeFindBar();
   state.currentId = null;
   state.dirty = false;
   state.savedAt = null;
@@ -122,6 +134,7 @@ function newMemo() {
   renderEditorMeta(); renderCharCount(); renderList();
   loadImages();
   loadAttachments();
+  resetHistory();
   refs.titleInput.focus();
 }
 /* 保存できたら true、失敗したら false を返す（例外は投げない）。
@@ -135,9 +148,10 @@ function newMemo() {
 const saveCurrent = serialized(async function saveCurrentMemo(silent = false) {
   const now = Date.now();
   const f = collectFields();
+  const wasNew = state.currentId === null;
   try {
     if (state.currentId === null) {
-      const id = await Store.add('memos', { ...f, createdAt: now, updatedAt: now, imageCount: 0 });
+      const id = await Store.add('memos', { ...f, createdAt: now, updatedAt: now, imageCount: 0, fileCount: 0, deletedAt: null });
       state.currentId = id;
       savePref('lastMemoId', id);
     } else {
@@ -151,11 +165,16 @@ const saveCurrent = serialized(async function saveCurrentMemo(silent = false) {
   }
   state.dirty = false;
   state.savedAt = now;
+  /* 保存できたので、退避しておいた下書きは用済み */
+  await clearDraft('new');
+  if (!wasNew) await clearDraftFor(state.currentId);
   await refreshMemos();
   renderList(); renderStamps(); renderSaveState();
   if (!silent) toast('メモを保存しました', 'success');
   return true;
 });
+/* 削除は「ゴミ箱へ移動」にして、取り消せるようにする。完全削除は
+   ゴミ箱の中から行う（trash.js） */
 async function deleteCurrent() {
   if (state.currentId === null) {
     const ok = await confirmDialog({
@@ -163,26 +182,22 @@ async function deleteCurrent() {
       message: 'このメモはまだ保存されていません。入力内容を破棄しますか？',
       okLabel: '破棄する',
     });
-    if (ok) showWelcome();
+    if (ok) { await clearDraft('new'); showWelcome(); renderList(); }
     return;
   }
   const m = state.memos.find(x => x.id === state.currentId);
-  const imgNote = (m?.imageCount || 0) > 0 ? `\n登録済みの画像 ${m.imageCount} 件も同時に削除されます。` : '';
-  const fileNote = (m?.fileCount || 0) > 0 ? `\n添付ファイル ${m.fileCount} 件も同時に削除されます。` : '';
   const ok = await confirmDialog({
     title: 'メモの削除',
-    message: `「${m?.title || '無題のメモ'}」を削除します。この操作は取り消せません。${imgNote}${fileNote}`,
-    okLabel: '削除する',
+    message: `「${m?.title || '無題のメモ'}」をゴミ箱へ移動します。\n` +
+      `ゴミ箱からは ${TRASH_KEEP_DAYS} 日以内であれば元に戻せます（画像・添付も一緒に残ります）。`,
+    okLabel: 'ゴミ箱へ移動',
   });
   if (!ok) return;
-  const imgs = await Store.byIndex('images', 'memoId', state.currentId);
-  for (const img of imgs) await Store.del('images', img.id);
-  await deleteAttachmentsOfMemo(state.currentId);
-  await Store.del('memos', state.currentId);
-  await refreshMemos();
+  const id = state.currentId;
+  if (!(await moveMemoToTrash(id))) return;
   showWelcome();
   renderList();
-  toast('メモを削除しました', 'success');
+  toast('メモをゴミ箱へ移動しました', 'success', { label: '元に戻す', onClick: () => restoreMemo(id) });
 }
 /* 未保存変更ガード（エラー防止） */
 async function guardDirty() {
@@ -199,7 +214,13 @@ async function guardDirty() {
   /* 保存に失敗したときは true を返さない。編集内容を残したまま
      画面を切り替えてしまうと、そのまま消えてしまうため */
   if (v === 'save')    return await saveCurrent(true);
-  if (v === 'discard') { state.dirty = false; return true; }
+  if (v === 'discard') {
+    state.dirty = false;
+    /* 破棄を選んだのだから、退避してあった下書きも残さない */
+    await clearDraftFor(state.currentId);
+    if (state.currentId === null) await clearDraft('new');
+    return true;
+  }
   return false;
 }
 
@@ -229,15 +250,19 @@ function applyGroupByDateState() {
 function applyImageFilterState() {
   refs.btnImageFilter.classList.toggle('active', state.imageOnly);
   refs.btnImageFilter.title = state.imageOnly ? '画像ありのメモのみ表示中（クリックで解除）' : '画像ありのメモのみ表示';
+  refs.btnFileFilter.classList.toggle('active', state.fileOnly);
+  refs.btnFileFilter.title = state.fileOnly ? '添付ありのメモのみ表示中（クリックで解除）' : '添付ファイルありのメモのみ表示';
 }
-function applySortDirState() {
+function applySortState() {
   const asc = state.sortDir === 'asc';
+  refs.sortKeySelect.value = state.sortKey;
   refs.btnSortOrder.innerHTML = asc
     ? '<i class="fa-solid fa-arrow-up-wide-short"></i> 昇順'
     : '<i class="fa-solid fa-arrow-down-wide-short"></i> 降順';
-  refs.btnSortOrder.title = asc
-    ? '古い順に表示中（クリックで新しい順に切替）'
-    : '新しい順に表示中（クリックで古い順に切替）';
+  const byTitle = state.sortKey === 'title';
+  refs.btnSortOrder.title = byTitle
+    ? (asc ? 'タイトルの昇順（クリックで降順に切替）' : 'タイトルの降順（クリックで昇順に切替）')
+    : (asc ? '古い順に表示中（クリックで新しい順に切替）' : '新しい順に表示中（クリックで古い順に切替）');
 }
 function applySearchScopeState() {
   $$('.scope-chip', refs.searchScope).forEach(btn => {

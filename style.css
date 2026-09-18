@@ -1412,3 +1412,155 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
 .tags-suggest .sg-item:hover, .tags-suggest .sg-item.active {
   background: var(--primary-soft); color: var(--primary-deep);
 }
+/* ============================================================
+   v1.6 追加分
+   ゴミ箱・一括操作・段落書式・メモ内検索・キー操作一覧
+   ============================================================ */
+
+/* --- トーストの取り消しボタン --- */
+.toast-action{
+  margin-left:auto;flex-shrink:0;
+  background:transparent;border:1px solid var(--ink-700);
+  color:var(--inv-text);border-radius:6px;
+  padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;
+  transition:background-color .12s;
+}
+.toast-action:hover{background:var(--ink-800)}
+
+/* --- ゴミ箱 --- */
+.trash-bar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  margin:0 12px 8px;padding:8px 10px;
+  background:rgba(194,69,50,.14);
+  border:1px solid rgba(194,69,50,.35);
+  border-radius:8px;
+  font-size:11.5px;color:var(--inv-text);
+}
+.trash-bar i{color:#F09A86;font-size:12px}
+.trash-bar span{flex:1;min-width:0}
+.trash-bar .btn{height:24px;padding:0 9px;font-size:11px}
+.sidebar-head .icon-btn.active{color:#F09A86;background:rgba(194,69,50,.2)}
+#app.trash-view .memo-item{cursor:default}
+
+/* --- 一括操作バー --- */
+.bulk-bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  margin:0 12px 8px;padding:8px 10px;
+  background:var(--ink-850);border:1px solid var(--ink-700);
+  border-radius:8px;
+}
+.bulk-count{font-size:11.5px;font-weight:700;color:var(--inv-text);margin-right:auto}
+.bulk-bar .btn{height:24px;padding:0 9px;font-size:11px}
+.bulk-bar .btn:disabled{opacity:.45;cursor:not-allowed}
+.bulk-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bulk-bar .group-field-select{height:24px;font-size:11px}
+
+/* --- 一覧項目：選択チェック・添付・下書きの印 --- */
+.memo-item.selectable{padding-left:16px}
+.mi-check{
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+  width:15px;height:15px;border-radius:4px;
+  border:1.5px solid var(--ink-700);background:var(--ink-900);
+  margin-right:2px;
+}
+.mi-check i{font-size:9px;color:transparent}
+.mi-check.on{background:var(--primary);border-color:var(--primary)}
+.mi-check.on i{color:#fff}
+.mi-files{
+  display:inline-flex;align-items:center;gap:4px;flex-shrink:0;
+  font-size:10.5px;font-family:var(--font-mono);color:var(--inv-sub);
+}
+.memo-item.active .mi-files{color:var(--text-sub)}
+.mi-draft{font-size:7px;color:#E0A32E;flex-shrink:0}
+.mi-acts{display:flex;gap:6px;margin-top:8px}
+.mi-act{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--ink-800);border:1px solid var(--ink-700);
+  color:var(--inv-sub);border-radius:6px;
+  padding:3px 9px;font-size:11px;font-weight:600;cursor:pointer;
+  transition:background-color .12s,color .12s;
+}
+.mi-act:hover{background:var(--ink-700);color:var(--inv-text)}
+.mi-act.mi-purge:hover{background:rgba(194,69,50,.3);color:#F09A86}
+.memo-item.active .mi-act{background:var(--paper-deep);border-color:var(--line);color:var(--text-sub)}
+
+/* --- 段落書式（見出し・箇条書き・チェックリスト） --- */
+.body-editable [data-fmt="h"]{
+  display:block;font-weight:700;line-height:1.5;
+  margin:.2em 0;min-height:1em;
+}
+.body-editable [data-fmt="h"][data-level="1"]{font-size:1.55em;color:var(--ink-900)}
+.body-editable [data-fmt="h"][data-level="2"]{font-size:1.28em;color:var(--ink-850)}
+.body-editable [data-fmt="h"][data-level="3"]{font-size:1.1em;color:var(--ink-800)}
+.body-editable [data-fmt="li"],
+.body-editable [data-fmt="task"]{
+  display:block;position:relative;padding-left:1.5em;min-height:1em;
+}
+.body-editable [data-fmt="li"]::before{
+  content:"・";position:absolute;left:.3em;color:var(--primary);font-weight:700;
+}
+.task-box{
+  position:absolute;left:.15em;top:.18em;
+  width:1em;height:1em;border-radius:3px;
+  border:1.5px solid var(--line-strong);background:var(--surface);
+  cursor:pointer;user-select:none;
+}
+.task-box:hover{border-color:var(--primary)}
+[data-fmt="task"][data-done="1"] .task-box{
+  background:var(--primary);border-color:var(--primary);
+}
+[data-fmt="task"][data-done="1"] .task-box::after{
+  content:"";position:absolute;left:.28em;top:.06em;
+  width:.28em;height:.55em;
+  border:solid #fff;border-width:0 2px 2px 0;
+  transform:rotate(45deg);
+}
+[data-fmt="task"][data-done="1"]{color:var(--text-sub);text-decoration:line-through}
+
+/* --- メモ内検索バー --- */
+.find-bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:8px 22px;
+  background:var(--paper-deep);
+  border-bottom:1px solid var(--line);
+}
+.find-bar > i{color:var(--text-sub);font-size:12px}
+.find-bar input{
+  height:28px;border:1px solid var(--line);border-radius:6px;
+  background:var(--surface);padding:0 9px;font-size:12.5px;color:var(--text);
+  min-width:120px;
+}
+.find-bar input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-soft)}
+.find-bar .btn{height:28px;padding:0 10px;font-size:12px}
+.find-bar .icon-btn{width:26px;height:26px;font-size:12px}
+.find-count{font-size:11.5px;color:var(--text-sub);min-width:46px;text-align:center}
+.find-count.none{color:var(--rec)}
+.find-div{width:1px;height:18px;background:var(--line-strong);margin:0 2px}
+.find-bar #findClose{margin-left:auto}
+/* 見つかった箇所は本文を書き換えず、重ねて塗るだけにする */
+.find-hit{
+  position:absolute;pointer-events:none;z-index:1;
+  background:rgba(224,163,46,.32);border-radius:2px;
+}
+.find-hit.current{background:rgba(194,69,50,.35);box-shadow:0 0 0 1px rgba(194,69,50,.5)}
+
+/* --- キー操作一覧 --- */
+.keys-body{
+  padding:18px 20px;overflow-y:auto;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:18px 26px;align-content:start;
+}
+.keys-sec h4{
+  font-size:12px;font-weight:800;color:var(--primary-deep);
+  letter-spacing:.04em;margin-bottom:8px;
+  padding-bottom:5px;border-bottom:1px solid var(--line);
+}
+.keys-row{display:flex;gap:10px;align-items:baseline;padding:3px 0}
+.keys-row dt{flex-shrink:0;min-width:128px}
+.keys-row dd{font-size:12px;color:var(--text-sub);line-height:1.5}
+.keys-row kbd{
+  display:inline-block;font-family:var(--font-mono);font-size:10.5px;
+  background:var(--paper-deep);border:1px solid var(--line-strong);
+  border-bottom-width:2px;border-radius:4px;
+  padding:2px 6px;color:var(--text);
+}

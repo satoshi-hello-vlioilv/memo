@@ -59,9 +59,14 @@ function createInlineImg(imgId, align, size) {
 
 /* 改行マークとカーソル行ハイライトは本文の中身ではなく表示専用の
    オーバーレイ。保存・末尾判定・書式適用の対象から外すために使う */
-const OVERLAY_SELECTOR = '.line-mark, .current-line-hl';
+const OVERLAY_SELECTOR = '.line-mark, .current-line-hl, .find-hit';
+const OVERLAY_CLASSES = ['line-mark', 'current-line-hl', 'find-hit'];
 const isOverlayEl = node => node.nodeType === Node.ELEMENT_NODE && !!node.classList &&
-  (node.classList.contains('line-mark') || node.classList.contains('current-line-hl'));
+  OVERLAY_CLASSES.some(c => node.classList.contains(c));
+/* チェックリストの □ のような、本文の一部ではない操作用の部品。
+   保存にも書式適用にも含めない */
+const isWidgetEl = node => node.nodeType === Node.ELEMENT_NODE && !!node.classList &&
+  node.classList.contains('task-box');
 
 function addTextWithBreaks(parent, text) {
   const lines = text.split('\n');
@@ -98,13 +103,16 @@ const fontById = id => BODY_FONTS.find(f => f.id === id) || null;
 function fontIdFromCss(css) {
   const s = String(css || '').toLowerCase();
   if (!s) return null;
-  if (/mincho|serif jp|times|georgia|serif/.test(s)) {
-    return /times|georgia/.test(s) && !/mincho|jp/.test(s) ? 'serif' : 'mincho';
+  /* 「sans-serif」は文字列として serif を含むが明朝ではない。先に置き換えて
+     おかないと、ごく普通のサイトから貼り付けた文字が明朝体になってしまう */
+  const t = s.replace(/sans-serif/g, 'sans');
+  if (/mincho|serif jp|times|georgia|serif/.test(t)) {
+    return /times|georgia/.test(t) && !/mincho|jp/.test(t) ? 'serif' : 'mincho';
   }
-  if (/mono|consolas|courier|cascadia/.test(s)) return 'mono';
-  if (/maru|rounded/.test(s)) return 'maru';
-  if (/gothic|hiragino|noto sans|meiryo/.test(s)) return 'gothic';
-  if (/arial|helvetica|sans-serif/.test(s)) return 'sans';
+  if (/mono|consolas|courier|cascadia/.test(t)) return 'mono';
+  if (/maru|rounded/.test(t)) return 'maru';
+  if (/gothic|hiragino|noto sans|meiryo/.test(t)) return 'gothic';
+  if (/arial|helvetica|sans/.test(t)) return 'sans';
   return null;
 }
 
@@ -114,6 +122,31 @@ function fontIdFromCss(css) {
 function createFormatElement(tag, param) {
   if (tag === 'b') return document.createElement('b');
   if (tag === 'i') return document.createElement('i');
+  /* 段落書式（見出し・箇条書き・チェックリスト）。インライン要素のままで
+     CSS の display:block により1行として見せる。行構造（<br>）を壊さずに
+     書式を付け外しできるようにするため、ブロック要素にはしない */
+  if (tag === 'h') {
+    const span = document.createElement('span');
+    span.dataset.fmt = 'h';
+    span.dataset.level = String(Math.min(6, Math.max(1, parseInt(param, 10) || 2)));
+    return span;
+  }
+  if (tag === 'li') {
+    const span = document.createElement('span');
+    span.dataset.fmt = 'li';
+    return span;
+  }
+  if (tag === 'task') {
+    const span = document.createElement('span');
+    span.dataset.fmt = 'task';
+    span.dataset.done = param === '1' ? '1' : '0';
+    const box = document.createElement('span');
+    box.className = 'task-box';
+    box.contentEditable = 'false';
+    box.title = 'クリックで完了／未完了を切り替えます';
+    span.appendChild(box);
+    return span;
+  }
   if (tag === 'link') {
     const url = safeLinkUrl(param);
     /* 安全でない URL は書式化せず、ただの span として中身だけ残す */
@@ -145,72 +178,26 @@ function createFormatElement(tag, param) {
   return span;
 }
 
-/* 画像マーカーと書式タグ([b] [i] [size=N] [color=#hex] [hl=#hex])を含む本文
-   テキストを DOM フラグメントへ再帰的に変換する。書式タグは入れ子にできる
-   (例: [b][color=#ff0000]太字の赤文字[/color][/b])ため、単純な正規表現の
-   一括置換ではなく再帰下降パーサーとして実装している。
-
-   【重要】走査位置は pos 変数で明示的に管理する。以前は g フラグ正規表現の
-   lastIndex を再帰をまたいで共有していたが、JS の仕様では exec が失敗すると
-   lastIndex が 0 にリセットされるため、閉じタグの無い開始タグ(ユーザーが
-   文字通り「[b]」と入力した場合など)で呼び出し元が先頭から再走査してしまい、
-   無限ループでアプリ全体がフリーズする致命的な不具合があった。 */
-const BODY_TOKEN_RE = /\[img:(?<imgId>\d+)(?::(?<imgAlign>[lcr]))?(?::(?<imgSize>[sml]|\d+|fit))?\]|\[(?<close>\/)?(?<tag>b|i|size|color|hl|font|link)(?:=(?<param>[^\]]*))?\]/g;
-const BODY_FMT_TAGS = ['b', 'i', 'size', 'color', 'hl', 'font', 'link'];
+/* 画像マーカーと書式タグを含む本文テキストを DOM フラグメントへ変換する。
+   文字列の解釈（入れ子・閉じタグの無いタグの扱い）は body-parse.js の
+   tokenizeBody() が行い、ここではその結果を DOM へ組み立てるだけにする */
 function textToFragment(text) {
-  let pos = 0;
-  /* 各タグの閉じタグ位置を先に列挙しておく。開始タグごとに indexOf で後方を
-     線形探索すると、対応の取れないタグが大量に並ぶ入力で二次時間になるため、
-     単調に進む pos に合わせてポインタを進めるだけで判定できるようにする */
-  const closeIdx = {};
-  for (const t of BODY_FMT_TAGS) {
-    const list = [];
-    const needle = `[/${t}]`;
-    for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) list.push(at);
-    closeIdx[t] = { list, next: 0 };
-  }
-  const hasCloseAhead = tag => {
-    const c = closeIdx[tag];
-    while (c.next < c.list.length && c.list[c.next] < pos) c.next++;
-    return c.next < c.list.length;
-  };
-  function parse(stopTag) {
-    const frag = document.createDocumentFragment();
-    while (pos < text.length) {
-      BODY_TOKEN_RE.lastIndex = pos;
-      const m = BODY_TOKEN_RE.exec(text);
-      if (!m) break;
-      if (m.index > pos) addTextWithBreaks(frag, text.slice(pos, m.index));
-      pos = m.index + m[0].length;
-      const g = m.groups;
-      if (g.imgId !== undefined) {
-        frag.appendChild(createInlineImg(Number(g.imgId), g.imgAlign || 'c', g.imgSize || 'fit'));
-        continue;
-      }
-      if (g.close) {
-        if (g.tag === stopTag) return frag;
-        /* 対応する開始タグの無い閉じタグは、書式として解釈せず文字のまま表示する */
-        addTextWithBreaks(frag, m[0]);
-        continue;
-      }
-      /* 対応する閉じタグが後方に無い開始タグも文字のまま表示する。ユーザーが
-         文字通り「[b]」等と入力したケースで、以降全文が意図せず書式化されたり
-         入力した文字が消えたりしないようにする */
-      if (!hasCloseAhead(g.tag)) {
-        addTextWithBreaks(frag, m[0]);
-        continue;
-      }
-      const el = createFormatElement(g.tag, g.param);
-      el.appendChild(parse(g.tag));
+  return tokensToFragment(tokenizeBody(text));
+}
+function tokensToFragment(nodes) {
+  const frag = document.createDocumentFragment();
+  for (const n of nodes) {
+    if (n.type === 'text') {
+      addTextWithBreaks(frag, n.text);
+    } else if (n.type === 'img') {
+      frag.appendChild(createInlineImg(n.id, n.align, n.size));
+    } else {
+      const el = createFormatElement(n.tag, n.param);
+      el.appendChild(tokensToFragment(n.children));
       frag.appendChild(el);
     }
-    if (pos < text.length) {
-      addTextWithBreaks(frag, text.slice(pos));
-      pos = text.length;
-    }
-    return frag;
   }
-  return parse(null);
+  return frag;
 }
 
 /* ============================================================
@@ -253,6 +240,12 @@ function htmlToBodyFragment(html) {
     const tags = [];
     const st = el.style || {};
     const tag = el.tagName;
+    /* 見出しと箇条書きは、本文の段落書式へ寄せる */
+    if (/^H[1-6]$/.test(tag)) tags.push(['h', String(Math.min(3, Number(tag[1])))]);
+    if (tag === 'LI') {
+      const box = el.querySelector('input[type="checkbox"]');
+      tags.push(box ? ['task', box.checked ? '1' : '0'] : ['li']);
+    }
     if (tag === 'B' || tag === 'STRONG' || /^(bold|[6-9]00)$/.test(String(st.fontWeight || ''))) tags.push(['b']);
     if (tag === 'I' || tag === 'EM' || String(st.fontStyle || '') === 'italic') tags.push(['i']);
     if (tag === 'A') {
@@ -304,27 +297,52 @@ function rgbToHex(rgbStr) {
   return '#' + toHex(m[1]) + toHex(m[2]) + toHex(m[3]);
 }
 
-function serializeBody() {
+/* 本文 DOM を保存形式の文字列へ変換する。
+   points に [{node, offset}] を渡すと、その位置が出来上がった文字列の
+   何文字目に当たるかも返す（元に戻す／段落書式で、書き換えたあとに
+   キャレットを戻すために使う）。spans には文字の出どころを記録し、
+   逆向きの変換（文字位置 → DOM 位置）にも使えるようにしている */
+function serializeBodyInternal(points = []) {
   let result = '';
+  const at = points.map(() => -1);
+  const spans = [];
+  const markContainer = (parent, index) => {
+    for (let i = 0; i < points.length; i++) {
+      if (at[i] === -1 && points[i].node === parent && points[i].offset === index) at[i] = result.length;
+    }
+  };
+  function walkChildren(parent) {
+    const kids = parent.childNodes;
+    for (let i = 0; i < kids.length; i++) {
+      markContainer(parent, i);
+      walk(kids[i]);
+    }
+    markContainer(parent, kids.length);
+  }
   function wrapTag(node, open, close) {
     result += open;
-    for (const c of node.childNodes) walk(c);
+    walkChildren(node);
     result += close;
   }
   function walk(node) {
     if (node.nodeType === Node.TEXT_NODE) {
+      const len = node.textContent.length;
+      for (let i = 0; i < points.length; i++) {
+        if (at[i] === -1 && points[i].node === node) at[i] = result.length + Math.min(points[i].offset, len);
+      }
+      spans.push({ node, start: result.length, len });
       result += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const fmt = node.dataset && node.dataset.fmt;
-      if (isOverlayEl(node)) {
-        return; /* 表示専用のオーバーレイ要素(改行マーク・現在行ハイライト)は読み飛ばす */
+      if (isOverlayEl(node) || isWidgetEl(node)) {
+        return; /* 表示専用の要素（改行マーク・現在行ハイライト・□）は読み飛ばす */
       } else if (node.classList && node.classList.contains('body-img')) {
         result += `[img:${node.dataset.id}:${node.dataset.align || 'c'}:${node.dataset.size || 'fit'}]`;
       } else if (node.tagName === 'BR') {
         result += '\n';
       } else if (node.tagName === 'DIV' || node.tagName === 'P') {
         if (result.length > 0 && !result.endsWith('\n')) result += '\n';
-        for (const c of node.childNodes) walk(c);
+        walkChildren(node);
         if (!result.endsWith('\n')) result += '\n';
       } else if (node.tagName === 'B' || node.tagName === 'STRONG') {
         wrapTag(node, '[b]', '[/b]');
@@ -336,28 +354,77 @@ function serializeBody() {
       } else if (fmt === 'color') {
         const hex = rgbToHex(node.style.color);
         if (hex) wrapTag(node, `[color=${hex}]`, '[/color]');
-        else for (const c of node.childNodes) walk(c);
+        else walkChildren(node);
       } else if (fmt === 'hl') {
         const hex = rgbToHex(node.style.backgroundColor);
         if (hex) wrapTag(node, `[hl=${hex}]`, '[/hl]');
-        else for (const c of node.childNodes) walk(c);
+        else walkChildren(node);
       } else if (fmt === 'font') {
         const id = node.dataset.font;
         if (fontById(id)) wrapTag(node, `[font=${id}]`, '[/font]');
-        else for (const c of node.childNodes) walk(c);
+        else walkChildren(node);
+      } else if (fmt === 'h') {
+        wrapTag(node, `[h=${node.dataset.level || 2}]`, '[/h]');
+      } else if (fmt === 'li') {
+        wrapTag(node, '[li]', '[/li]');
+      } else if (fmt === 'task') {
+        wrapTag(node, node.dataset.done === '1' ? '[task=1]' : '[task]', '[/task]');
       } else if (fmt === 'link') {
         /* URL に ] が含まれるとマーカーが壊れるため、その場合は
            リンクを諦めて文字だけ残す */
         const url = node.getAttribute('href') || '';
         if (url && !url.includes(']')) wrapTag(node, `[link=${url}]`, '[/link]');
-        else for (const c of node.childNodes) walk(c);
+        else walkChildren(node);
       } else {
-        for (const c of node.childNodes) walk(c);
+        walkChildren(node);
       }
     }
   }
-  for (const c of refs.bodyInput.childNodes) walk(c);
-  return result.replace(/\n$/, '');
+  walkChildren(refs.bodyInput);
+  /* 末尾の改行1つは保存しない（従来の挙動）。位置も同じ長さへ丸める */
+  const text = result.replace(/\n$/, '');
+  return { text, points: at.map(v => v === -1 ? -1 : Math.min(v, text.length)), spans };
+}
+function serializeBody() { return serializeBodyInternal().text; }
+
+/* 保存形式の文字位置（serializeBodyInternal の結果における offset）から、
+   いまの DOM 上の位置を求める */
+function bodyPositionAtOffset(offset) {
+  const { spans } = serializeBodyInternal();
+  if (spans.length === 0) return null;
+  for (const s of spans) {
+    if (offset <= s.start + s.len) return { node: s.node, offset: Math.max(0, offset - s.start) };
+  }
+  const last = spans[spans.length - 1];
+  return { node: last.node, offset: last.len };
+}
+/* いまのキャレット位置を保存形式の文字位置で返す（選択の始点・終点） */
+function bodyCaretOffsets() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const r = sel.getRangeAt(0);
+  if (!refs.bodyInput.contains(r.startContainer)) return null;
+  const { points } = serializeBodyInternal([
+    { node: r.startContainer, offset: r.startOffset },
+    { node: r.endContainer,   offset: r.endOffset },
+  ]);
+  if (points[0] === -1) return null;
+  return { start: points[0], end: points[1] === -1 ? points[0] : points[1] };
+}
+/* 文字位置へキャレットを戻す */
+function setBodyCaretOffset(start, end = start) {
+  const from = bodyPositionAtOffset(start);
+  const to   = bodyPositionAtOffset(end);
+  if (!from) { refs.bodyInput.focus(); return; }
+  const range = document.createRange();
+  try {
+    range.setStart(from.node, from.offset);
+    if (to) range.setEnd(to.node, to.offset);
+    else range.collapse(true);
+  } catch { return; }
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 /* 画面に見えている文字だけの本文。serializeBody() が返すのは保存用の形式で、
@@ -368,6 +435,126 @@ function bodyPlainText() {
   return serializeBody()
     .replace(BODY_IMG_MARKER_RE, '')
     .replace(BODY_FMT_TAG_RE, '');
+}
+
+/* ============================================================
+   段落書式（見出し・箇条書き・チェックリスト）
+   ------------------------------------------------------------
+   行まるごとに効く書式なので、DOM を直接いじるのではなく
+   「保存形式へ直列化 → 行単位で書き換え → 組み立て直す」で処理する。
+   行の境界（<br> と <div> の混在）を自前で解釈せずに済み、
+   結果が保存内容とずれない。
+   ============================================================ */
+const BLOCK_FMT_TYPES = ['h', 'li', 'task'];
+const isBlockFmtEl = el => !!(el.dataset && BLOCK_FMT_TYPES.includes(el.dataset.fmt));
+/* キャレットのある行の段落種別（'h1' 'li' 'task' など。無ければ null） */
+function currentBlockKind() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const el = closestFormatEl(sel.anchorNode, isBlockFmtEl);
+  if (!el) return null;
+  return el.dataset.fmt === 'h' ? 'h' + (el.dataset.level || 2) : el.dataset.fmt;
+}
+
+function applyBlockFormat(kind) {
+  refs.bodyInput.focus();
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !refs.bodyInput.contains(sel.getRangeAt(0).startContainer)) {
+    toast('段落書式を適用する行にカーソルを置いてください', 'info');
+    return;
+  }
+  const r = sel.getRangeAt(0);
+  const { text, points } = serializeBodyInternal([
+    { node: r.startContainer, offset: r.startOffset },
+    { node: r.endContainer,   offset: r.endOffset },
+  ]);
+  const caret = points[0] === -1 ? text.length : points[0];
+  const caretEnd = points[1] === -1 ? caret : points[1];
+  const lines = text.split('\n');
+  const startLine = offsetToLineIndex(lines, caret);
+  const endLine   = offsetToLineIndex(lines, caretEnd);
+  const next = applyBlockToLines(lines, startLine, endLine, kind);
+  const nextText = next.join('\n');
+  if (nextText === text) return;
+
+  /* キャレットは「同じ行の同じ文字数目」へ戻す（タグの増減分をずらす） */
+  const oldStarts = lineStartOffsets(lines);
+  const newStarts = lineStartOffsets(next);
+  const oldInfo = parseBlockLine(lines[startLine]);
+  const newInfo = parseBlockLine(next[startLine]);
+  const oldOpen = blockAffixes(oldInfo.kind, oldInfo.done).open.length;
+  const newOpen = blockAffixes(newInfo.kind, newInfo.done).open.length;
+  const col = Math.max(0, Math.min(caret - oldStarts[startLine] - oldOpen, oldInfo.inner.length));
+  const caretAfter = newStarts[startLine] + newOpen + col;
+
+  pushHistory();
+  deserializeBody(nextText);
+  setBodyCaretOffset(caretAfter);
+  afterBodyEdit();
+}
+
+/* チェックリストの □ を押したときの切り替え */
+function toggleTaskBox(box) {
+  const el = box.closest('[data-fmt="task"]');
+  if (!el) return;
+  pushHistory();
+  el.dataset.done = el.dataset.done === '1' ? '0' : '1';
+  afterBodyEdit();
+}
+
+/* 箇条書き・チェックリストの行で Enter を押したときに、次の行も同じ
+   書式で始める（空の行で押したときは書式を解除して通常の行に戻す）。
+   処理したときだけ true を返し、呼び出し側が既定の改行を止める */
+function handleBlockEnter() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  if (!refs.bodyInput.contains(range.startContainer)) return false;
+  const block = closestFormatEl(range.startContainer, isBlockFmtEl);
+  if (!block) return false;
+  const kind = block.dataset.fmt;
+  const inner = [...block.childNodes].filter(n => !isWidgetEl(n))
+    .map(n => n.textContent).join('');
+  pushHistory();
+  if (!inner.trim()) {
+    /* 空の項目で Enter → 段落書式を解除して普通の行にする */
+    const br = document.createElement('br');
+    block.replaceWith(br);
+    ensureTrailingEditable();
+    placeCaretAfter(br);
+    afterBodyEdit();
+    return true;
+  }
+  /* キャレットより後ろを次の行へ送る */
+  const tail = document.createRange();
+  tail.setStart(range.endContainer, range.endOffset);
+  tail.setEnd(block, block.childNodes.length);
+  const rest = tail.extractContents();
+  const br = document.createElement('br');
+  let holder;
+  if (kind === 'h') {
+    /* 見出しの次の行まで見出しにはしない（本文が続くのが普通） */
+    holder = document.createDocumentFragment();
+    holder.appendChild(rest);
+  } else {
+    holder = createFormatElement(kind, kind === 'task' ? '0' : undefined);
+    holder.appendChild(rest);
+  }
+  /* 空の行にもキャレットを置けるよう、文字が無ければ空のテキストノードを置く */
+  let caretNode = firstTextNode(holder);
+  if (!caretNode) {
+    caretNode = document.createTextNode('');
+    holder.appendChild(caretNode);
+  }
+  block.after(br, holder);
+  ensureTrailingEditable();
+  const nr = document.createRange();
+  nr.setStart(caretNode, 0);
+  nr.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(nr);
+  afterBodyEdit();
+  return true;
 }
 
 function deserializeBody(text) {
@@ -472,6 +659,7 @@ function endImgDrag() {
 }
 
 function insertBodyText(text, caretAt = null) {
+  pushHistory();
   const sel = window.getSelection();
   /* 【重要】挿入位置の判定は focus() より先に行う。選択がタイトル欄など本文の
      外に残っている状態で focus() を呼ぶと、キャレットが本文の「先頭」へ移り、
@@ -525,6 +713,7 @@ function insertBodyText(text, caretAt = null) {
    キャレット位置へ挿入する。挿入位置の決め方は insertBodyText と同じ */
 function insertBodyFragment(frag) {
   if (!frag || !frag.firstChild) return;
+  pushHistory();
   const sel = window.getSelection();
   const current = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
   const target = current && refs.bodyInput.contains(current.commonAncestorContainer)
@@ -550,6 +739,7 @@ function insertBodyFragment(frag) {
 }
 
 function insertImageRef(imgId) {
+  pushHistory();
   refs.bodyInput.focus();
   const imgEl = createInlineImg(imgId, 'c', 'fit');
   const sel = window.getSelection();
@@ -580,6 +770,7 @@ function openInlineImage(wrap) {
 function startImageResize(wrap, startEvent) {
   const imgEl = wrap.querySelector('.body-img__img');
   if (!imgEl) return;
+  pushHistory();
   const startX = startEvent.clientX;
   const startWidth = imgEl.getBoundingClientRect().width;
   const minW = 48;
@@ -783,4 +974,9 @@ function updateCursorHighlight() {
   const top = rect.top - containerRect.top + scrollTop;
   hl.style.top = Math.round(top - 3) + 'px';
   hl.style.height = Math.round(rect.height + 6) + 'px';
+}
+
+/* テストから読み込むための書き出し（ブラウザでは module が無いので何もしない） */
+if (typeof module === 'object' && module.exports) {
+  module.exports = { safeLinkUrl, rgbToHex, fontIdFromCss, fontById, BODY_FONTS };
 }

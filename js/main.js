@@ -10,9 +10,31 @@
 function bindEvents() {
   /* --- トップバー アクション --- */
   refs.btnToggleSidebar.addEventListener('click', toggleSidebar);
-  refs.btnExport.addEventListener('click', exportData);
+  refs.btnExport.addEventListener('click', () => exportData());
   refs.btnImport.addEventListener('click', () => refs.fileImport.click());
   refs.fileImport.addEventListener('change', (e) => importData(e.target.files[0]));
+
+  /* --- ゴミ箱 --- */
+  refs.btnTrash.addEventListener('click', () => toggleTrashView());
+  refs.btnExitTrash.addEventListener('click', () => toggleTrashView(false));
+  refs.btnEmptyTrash.addEventListener('click', emptyTrash);
+
+  /* --- 選択モード・一括操作 --- */
+  refs.btnSelectMode.addEventListener('click', toggleSelectMode);
+  refs.btnBulkAll.addEventListener('click', () => toggleSelectAll(filteredMemos()));
+  refs.btnBulkTag.addEventListener('click', bulkAddTags);
+  refs.bulkMarkSelect.innerHTML = '<option value="">目印…</option>' +
+    MEMO_MARKS.map(mk => `<option value="${mk.id}">${esc(mk.label)}</option>`).join('') +
+    '<option value="none">目印を外す</option>';
+  refs.bulkMarkSelect.addEventListener('change', () => {
+    const v = refs.bulkMarkSelect.value;
+    if (!v) return;
+    bulkSetMark(v === 'none' ? null : v);
+  });
+  refs.btnBulkExport.addEventListener('click', bulkExport);
+  refs.btnBulkTrash.addEventListener('click', bulkTrash);
+  refs.btnBulkRestore.addEventListener('click', bulkRestore);
+  refs.btnBulkPurge.addEventListener('click', bulkPurge);
 
   /* --- 検索・フィルタ --- */
   const onSearch = debounce(() => {
@@ -121,6 +143,14 @@ function bindEvents() {
     const item = e.target.closest('.memo-item');
     if (!item) return;
     const id = Number(item.dataset.id);
+    if (e.target.closest('.mi-restore')) { restoreMemo(id); return; }
+    if (e.target.closest('.mi-purge'))   { purgeMemoAsked(id); return; }
+    /* 選択モード中はクリックで選択の付け外しだけを行う */
+    if (state.selectMode) { toggleSelected(id); return; }
+    if (state.trashView) {
+      toast('ゴミ箱のメモは編集できません。「復元」で元に戻してください', 'info');
+      return;
+    }
     if (id === state.currentId) return;
     if (await guardDirty()) openMemo(id);
   });
@@ -132,6 +162,7 @@ function bindEvents() {
   refs.btnWelcomeFmt.addEventListener('click', () => openManageModal('formats'));
   refs.mgmtNavFormats.addEventListener('click', () => switchMgmtSection('formats'));
   refs.mgmtNavTags.addEventListener('click', () => switchMgmtSection('tags'));
+  refs.mgmtNavKeys.addEventListener('click', () => switchMgmtSection('keys'));
   refs.mgmtClose.addEventListener('click', () => { refs.manageModal.hidden = true; });
   refs.manageModal.addEventListener('click', e => {
     if (e.target === refs.manageModal && backdropClickAllowed(refs.manageModal)) refs.manageModal.hidden = true;
@@ -152,6 +183,8 @@ function bindEvents() {
     if (e.key === 'Enter') { e.preventDefault(); refs.tmAdd.click(); }
   });
   refs.tmList.addEventListener('click', async e => {
+    const rename = e.target.closest('.tm-rename');
+    if (rename) { renameTagAsked(rename.dataset.tag); return; }
     const btn = e.target.closest('.tm-del');
     if (!btn) return;
     const ok = await confirmDialog({
@@ -193,7 +226,7 @@ function bindEvents() {
     }
   });
 
-  refs.bodyInput.addEventListener('input', afterBodyEdit);
+  refs.bodyInput.addEventListener('input', () => { afterBodyEdit(); refreshFindDebounced(); });
   refs.bodyInput.addEventListener('keydown', e => {
     /* Enter などブラウザ既定の編集操作は、キャレット直後にある要素を
        「続きの内容」とみなして分割構造に巻き込むことがある。カーソル行
@@ -203,6 +236,11 @@ function bindEvents() {
     if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
       insertBodyText('\t');
+      return;
+    }
+    /* 箇条書き・チェックリストの行では、Enter で同じ書式の次の行を作る */
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.isComposing) {
+      if (handleBlockEnter()) e.preventDefault();
     }
   });
   /* ホバー中の画像のコントロールバー位置を実測して追従させる */
@@ -242,6 +280,13 @@ function bindEvents() {
     openInlineImage(wrap);
   });
   refs.bodyInput.addEventListener('click', e => {
+    /* チェックリストの □ は、クリックで完了／未完了を切り替える */
+    const box = e.target.closest('.task-box');
+    if (box) {
+      e.preventDefault();
+      toggleTaskBox(box);
+      return;
+    }
     /* 編集領域内のリンクは、通常クリックではキャレット移動を優先し、
        Ctrl(⌘)+クリックで開く */
     const link = e.target.closest('a[data-fmt="link"]');
@@ -266,6 +311,7 @@ function bindEvents() {
     if (posBtn) {
       const wrap = posBtn.closest('.body-img');
       if (!wrap) return;
+      pushHistory();
       wrap.dataset.align = posBtn.dataset.a;
       $$('.body-img__pos', wrap).forEach(b => b.classList.toggle('on', b.dataset.a === posBtn.dataset.a));
       markDirty();
@@ -274,7 +320,7 @@ function bindEvents() {
     const delBtn = e.target.closest('.body-img__del');
     if (delBtn) {
       const wrap = delBtn.closest('.body-img');
-      if (wrap) { wrap.remove(); afterBodyEdit(); }
+      if (wrap) { pushHistory(); wrap.remove(); afterBodyEdit(); }
     }
   });
   refs.bodyInput.addEventListener('change', e => {
@@ -282,6 +328,7 @@ function bindEvents() {
     if (sel) {
       const wrap = sel.closest('.body-img');
       if (wrap) {
+        pushHistory();
         wrap.dataset.size = sel.value;
         const imgEl = wrap.querySelector('.body-img__img');
         if (imgEl) imgEl.style.width = '';   /* プリセット選択時はカスタム幅を解除 */
@@ -314,6 +361,7 @@ function bindEvents() {
   refs.bodyInput.addEventListener('drop', e => {
     if (!draggedImg) return;
     e.preventDefault();
+    pushHistory();
     const range = caretRangeFromPoint(e.clientX, e.clientY);
     if (range && !draggedImg.contains(range.startContainer)) {
       range.insertNode(draggedImg);
@@ -418,6 +466,21 @@ function bindEvents() {
   refs.btnBold.addEventListener('click', toggleBold);
   keepBodyFocus(refs.btnItalic);
   refs.btnItalic.addEventListener('click', toggleItalic);
+  keepBodyFocus(refs.btnLink);
+  refs.btnLink.addEventListener('click', insertOrEditLink);
+  /* 元に戻す／やり直す */
+  keepBodyFocus(refs.btnUndo);
+  refs.btnUndo.addEventListener('click', undoBody);
+  keepBodyFocus(refs.btnRedo);
+  refs.btnRedo.addEventListener('click', redoBody);
+  /* 段落（見出し・箇条書き・チェックリスト） */
+  refs.blockSelect.addEventListener('mousedown', captureBodySelection);
+  refs.blockSelect.addEventListener('change', () => {
+    const val = refs.blockSelect.value;
+    if (!val) return;
+    applyBlockFormat(val);
+    updateFormatToolbarState();
+  });
   refs.fontFamilySelect.addEventListener('mousedown', captureBodySelection);
   refs.fontFamilySelect.addEventListener('change', () => {
     const val = refs.fontFamilySelect.value;
@@ -523,6 +586,18 @@ function bindEvents() {
     savePref('imageOnly', state.imageOnly);
     renderList();
   });
+  refs.btnFileFilter.addEventListener('click', () => {
+    state.fileOnly = !state.fileOnly;
+    applyImageFilterState();
+    savePref('fileOnly', state.fileOnly);
+    renderList();
+  });
+  refs.sortKeySelect.addEventListener('change', () => {
+    state.sortKey = refs.sortKeySelect.value;
+    applySortState();
+    savePref('sortKey', state.sortKey);
+    renderList();
+  });
   refs.groupFieldSelect.addEventListener('change', () => {
     state.groupDateField = refs.groupFieldSelect.value;
     state.expandedGroups.clear();
@@ -531,7 +606,7 @@ function bindEvents() {
   });
   refs.btnSortOrder.addEventListener('click', () => {
     state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
-    applySortDirState();
+    applySortState();
     savePref('sortDir', state.sortDir);
     renderList();
   });
@@ -554,13 +629,38 @@ function bindEvents() {
     if (e.target === refs.dialogRoot && backdropClickAllowed(refs.dialogRoot)) closeDialog('cancel');
   });
 
+  /* --- メモ内検索・置換 --- */
+  refs.findClose.addEventListener('click', closeFindBar);
+  refs.findPrev.addEventListener('click', () => gotoFindMatch(-1));
+  refs.findNext.addEventListener('click', () => gotoFindMatch(1));
+  refs.findReplace.addEventListener('click', replaceCurrentMatch);
+  refs.findReplaceAll.addEventListener('click', replaceAllMatches);
+  refs.findInput.addEventListener('input', debounce(() => runFind(), 160));
+  refs.findInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); gotoFindMatch(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFindBar(); refs.bodyInput.focus(); }
+  });
+  refs.replaceInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); replaceCurrentMatch(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFindBar(); refs.bodyInput.focus(); }
+  });
+  refs.bodyInput.addEventListener('scroll', () => { if (!refs.findBar.hidden) paintFindHits(); }, { passive: true });
+
   /* --- キーボードショートカット --- */
+  /* 入力欄にカーソルがあるときは、1文字キーのショートカットを無効にする */
+  const inTextField = () => {
+    const el = document.activeElement;
+    if (!el) return false;
+    return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
+  };
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if (!refs.ctxMenu.hidden) { hideCtxMenu(); return; }
       if (!refs.dialogRoot.hidden) { closeDialog('cancel'); return; }
       if (lb.open) { lbClose(); return; }
       if (!refs.manageModal.hidden) { refs.manageModal.hidden = true; return; }
+      if (!refs.findBar.hidden) { closeFindBar(); return; }
+      if (state.selectMode) { setSelectMode(false); return; }
       return;
     }
     if (lb.open) {
@@ -572,16 +672,66 @@ function bindEvents() {
       if (e.key === '1') { lb.scale = 1; lb.tx = 0; lb.ty = 0; lbApply(); return; }
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    const mod = e.ctrlKey || e.metaKey;
+    const key = e.key.toLowerCase();
+    if (mod && key === 's') {
       e.preventDefault();
       if (e.repeat) return;   /* 押しっぱなしのキーリピートで保存を繰り返さない */
       if (!refs.sheet.hidden) saveCurrent();
+      return;
     }
     /* Ctrl+Shift+V：次の1回だけ書式を捨てて貼り付ける。
        ブラウザの貼り付け自体は止められないので、paste ハンドラ側で
        このフラグを見てプレーンテキストとして処理する */
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
-      pastePlainOnce = true;
+    if (mod && e.shiftKey && key === 'v') { pastePlainOnce = true; return; }
+    /* 元に戻す／やり直す（本文の編集中のみ横取りする） */
+    if (mod && key === 'z' && !refs.sheet.hidden && document.activeElement === refs.bodyInput) {
+      e.preventDefault();
+      if (e.shiftKey) redoBody(); else undoBody();
+      return;
+    }
+    if (mod && key === 'y' && !refs.sheet.hidden && document.activeElement === refs.bodyInput) {
+      e.preventDefault();
+      redoBody();
+      return;
+    }
+    /* 検索：本文を編集中ならメモ内検索、それ以外は一覧の検索欄へ */
+    if (mod && key === 'f') {
+      e.preventDefault();
+      if (!refs.sheet.hidden && (document.activeElement === refs.bodyInput || !refs.findBar.hidden)) {
+        openFindBar();
+      } else {
+        if (!state.sidebarOpen) toggleSidebar();
+        refs.searchInput.focus();
+        refs.searchInput.select();
+      }
+      return;
+    }
+    if (mod && !e.shiftKey && (key === 'b' || key === 'i' || key === 'k') &&
+        document.activeElement === refs.bodyInput) {
+      e.preventDefault();
+      captureBodySelection();
+      if (key === 'b') toggleBold();
+      else if (key === 'i') toggleItalic();
+      else insertOrEditLink();
+      return;
+    }
+    /* Alt+N：新規メモ（Ctrl+N はブラウザ側が新しいウィンドウに使うため避ける） */
+    if (e.altKey && key === 'n') {
+      e.preventDefault();
+      guardDirty().then(ok => { if (ok) newMemo(); });
+      return;
+    }
+    /* Alt+↑ / Alt+↓：一覧の前後のメモへ移動 */
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      stepMemo(e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    /* ? または F1 でショートカット一覧 */
+    if ((e.key === 'F1' || (e.key === '?' && !inTextField())) && !mod) {
+      e.preventDefault();
+      openManageModal('keys');
     }
   });
 
@@ -613,7 +763,7 @@ async function init() {
   applyPanelState();
   applySidebarState();
   applyGroupByDateState();
-  applySortDirState();
+  applySortState();
   applySearchScopeState();
   applyImageFilterState();
   applyShowLineMarksState();
@@ -621,15 +771,22 @@ async function init() {
   await refreshMemos();
   await refreshFormats();
   await refreshTagsMaster();
+  await refreshDrafts();
+  /* 保持期間を過ぎたゴミ箱の中身と、宛先の無くなった下書きを片付ける */
+  await purgeExpiredTrash();
+  await purgeStaleDrafts();
   bindEvents();
+  renderKeysHelp();
   setupLightboxEvents();
   setupSpeech();
   setupDragDrop();
   renderList();
 
+  /* 保存されないまま終了した新規メモがあれば、まずその復元を尋ねる */
+  const restored = await maybeRestoreNewDraft();
   /* 前回開いていたメモを復元 */
   const last = prefs.lastMemoId;
-  if (typeof last === 'number' && state.memos.some(m => m.id === last)) {
+  if (!restored && typeof last === 'number' && state.memos.some(m => m.id === last && !m.deletedAt)) {
     await openMemo(last);
   }
 }

@@ -37,14 +37,22 @@
   <!-- ======== サイドバー：検索・一覧 ======== -->
   <aside class="sidebar">
     <div class="sidebar-head">
-      <span class="sidebar-title"><i class="fa-solid fa-clock-rotate-left"></i> メモ一覧</span>
+      <span class="sidebar-title" id="sidebarTitle"><i class="fa-solid fa-clock-rotate-left"></i> メモ一覧</span>
+      <button id="btnTrash" class="icon-btn" title="ゴミ箱を開く"><i class="fa-solid fa-trash-can"></i></button>
       <button id="btnSidebarClose" class="icon-btn" title="サイドバーを閉じる"><i class="fa-solid fa-angles-left"></i></button>
     </div>
     <div class="search-box" style="position:relative;">
       <i class="fa-solid fa-magnifying-glass"></i>
-      <input id="searchInput" type="text" placeholder="タイトル・タグ・本文で検索" autocomplete="off">
+      <input id="searchInput" type="text" placeholder="検索（例: 定例 tag:業務 -済）" autocomplete="off"
+             title="空白区切りですべてを含む検索。tag: / mark: / is:image / date: / -除外 が使えます（Ctrl+F）">
       <button id="searchClear" class="icon-btn" title="検索をクリア" hidden=""><i class="fa-solid fa-xmark"></i></button>
       <div class="search-suggest" id="searchSuggest" hidden=""></div>
+    </div>
+    <div class="trash-bar" id="trashBar" hidden="">
+      <i class="fa-solid fa-trash-can"></i>
+      <span>ゴミ箱 <span id="trashCount" class="mono">0 件</span>・30 日で自動削除</span>
+      <button id="btnEmptyTrash" class="btn btn-danger-ghost">空にする</button>
+      <button id="btnExitTrash" class="btn btn-soft">一覧へ戻る</button>
     </div>
     <div class="search-scope" id="searchScope">
       <span class="search-scope-label">検索対象</span>
@@ -59,14 +67,37 @@
     <div class="list-meta">
       <span id="listCount" class="mono">0 件</span>
       <div class="list-meta-right">
+        <button id="btnSelectMode" class="icon-btn" title="複数のメモを選んでまとめて操作"><i class="fa-regular fa-square-check"></i></button>
         <button id="btnImageFilter" class="icon-btn" title="画像ありのメモのみ表示"><i class="fa-regular fa-image"></i></button>
+        <button id="btnFileFilter" class="icon-btn" title="添付ファイルありのメモのみ表示"><i class="fa-solid fa-paperclip"></i></button>
         <select id="groupFieldSelect" class="group-field-select" title="まとめる日付の種類" hidden="">
           <option value="createdAt">作成日</option>
           <option value="updatedAt">更新日</option>
         </select>
         <button id="btnGroupByDate" class="icon-btn" title="日付でグループ化"><i class="fa-solid fa-calendar-days"></i></button>
+        <select id="sortKeySelect" class="group-field-select" title="並び替えの基準">
+          <option value="updatedAt">更新日</option>
+          <option value="createdAt">作成日</option>
+          <option value="title">タイトル</option>
+        </select>
         <button id="btnSortOrder" class="sort-btn" title="新しい順に表示中（クリックで古い順に切替）"><i class="fa-solid fa-arrow-down-wide-short"></i> 降順</button>
       </div>
+    </div>
+    <div class="bulk-bar" id="bulkBar" hidden="">
+      <span class="bulk-count" id="bulkCount">0 件を選択</span>
+      <button id="btnBulkAll" class="btn btn-soft"><i class="fa-regular fa-square-check"></i> <span id="bulkAllLabel">すべて選択</span></button>
+      <span class="bulk-acts" id="bulkNormalActs">
+        <button id="btnBulkTag" class="btn btn-soft" data-need-sel=""><i class="fa-solid fa-tags"></i> タグ</button>
+        <select id="bulkMarkSelect" class="group-field-select" title="選択したメモに目印を付ける">
+          <option value="">目印…</option>
+        </select>
+        <button id="btnBulkExport" class="btn btn-soft" data-need-sel=""><i class="fa-solid fa-file-export"></i> 書き出し</button>
+        <button id="btnBulkTrash" class="btn btn-danger-ghost" data-need-sel=""><i class="fa-regular fa-trash-can"></i> 削除</button>
+      </span>
+      <span class="bulk-acts" id="bulkTrashActs" hidden="">
+        <button id="btnBulkRestore" class="btn btn-soft" data-need-sel=""><i class="fa-solid fa-rotate-left"></i> 復元</button>
+        <button id="btnBulkPurge" class="btn btn-danger-ghost" data-need-sel=""><i class="fa-regular fa-trash-can"></i> 完全削除</button>
+      </span>
     </div>
     <ul class="memo-list" id="memoList"></ul>
     <div class="list-empty" id="listEmpty" hidden="">
@@ -113,8 +144,23 @@
 
       <div class="toolbar">
         <div class="tool-group">
-          <button id="btnBold" class="icon-btn" title="太字"><i class="fa-solid fa-bold"></i></button>
-          <button id="btnItalic" class="icon-btn" title="斜体"><i class="fa-solid fa-italic"></i></button>
+          <button id="btnUndo" class="icon-btn" title="元に戻す（Ctrl+Z）" disabled=""><i class="fa-solid fa-rotate-left"></i></button>
+          <button id="btnRedo" class="icon-btn" title="やり直す（Ctrl+Shift+Z）" disabled=""><i class="fa-solid fa-rotate-right"></i></button>
+        </div>
+        <span class="tool-div"></span>
+        <div class="tool-group">
+          <select id="blockSelect" class="fmt-select fmt-select--sm" title="段落の種類（見出し・箇条書き・チェックリスト）">
+            <option value="">段落</option>
+            <option value="p">本文</option>
+            <option value="h1">見出し 大</option>
+            <option value="h2">見出し 中</option>
+            <option value="h3">見出し 小</option>
+            <option value="li">箇条書き</option>
+            <option value="task">チェックリスト</option>
+          </select>
+          <button id="btnBold" class="icon-btn" title="太字（Ctrl+B）"><i class="fa-solid fa-bold"></i></button>
+          <button id="btnItalic" class="icon-btn" title="斜体（Ctrl+I）"><i class="fa-solid fa-italic"></i></button>
+          <button id="btnLink" class="icon-btn" title="リンクを挿入・編集（Ctrl+K）"><i class="fa-solid fa-link"></i></button>
           <select id="fontFamilySelect" class="fmt-select fmt-select--sm" title="フォント">
             <option value="">フォント</option>
             <option value="reset">フォント解除</option>
@@ -163,6 +209,18 @@
       </div>
 
       <div class="body-wrap">
+        <div class="find-bar" id="findBar" hidden="">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input id="findInput" type="text" placeholder="メモ内を検索" autocomplete="off">
+          <span class="find-count mono" id="findCount">0 / 0</span>
+          <button id="findPrev" class="icon-btn" title="前へ（Shift+Enter）"><i class="fa-solid fa-chevron-up"></i></button>
+          <button id="findNext" class="icon-btn" title="次へ（Enter）"><i class="fa-solid fa-chevron-down"></i></button>
+          <span class="find-div"></span>
+          <input id="replaceInput" type="text" placeholder="置換後の文字" autocomplete="off">
+          <button id="findReplace" class="btn btn-soft" title="いま選んでいる箇所を置換">置換</button>
+          <button id="findReplaceAll" class="btn btn-soft" title="見つかったすべてを置換">すべて</button>
+          <button id="findClose" class="icon-btn" title="閉じる（Esc）"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         <div id="interimBar" class="interim-bar">
           <i class="fa-solid fa-wave-square"></i><span id="interimText"></span>
         </div>
@@ -272,6 +330,10 @@
           <span class="mgmt-nav-label">タグ</span>
           <span class="mgmt-nav-count mono" id="mgmtTagCount">0</span>
         </button>
+        <button id="mgmtNavKeys" class="mgmt-nav-item" data-section="keys">
+          <i class="fa-solid fa-keyboard"></i>
+          <span class="mgmt-nav-label">キー操作</span>
+        </button>
       </nav>
 
       <!-- フォーマット セクション -->
@@ -344,6 +406,11 @@
           </div>
         </div>
       </div>
+
+      <!-- キー操作 セクション -->
+      <div class="mgmt-section" id="mgmtSectionKeys" hidden="">
+        <div class="keys-body" id="keysBody"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -379,10 +446,17 @@
      ES モジュールではなく通常の <script> として、依存の順に読み込む。
      main.js（イベント結線・初期化）は他が出揃ってから最後に置く。 -->
 <script src="js/core.js"></script>
+<script src="js/search.js"></script>
+<script src="js/body-parse.js"></script>
 <script src="js/list.js"></script>
+<script src="js/bulk.js"></script>
+<script src="js/trash.js"></script>
+<script src="js/drafts.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/body.js"></script>
+<script src="js/history.js"></script>
 <script src="js/text-format.js"></script>
+<script src="js/find.js"></script>
 <script src="js/ctxmenu.js"></script>
 <script src="js/images.js"></script>
 <script src="js/files.js"></script>

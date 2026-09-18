@@ -144,3 +144,8 @@ async function deleteAttachmentsOfMemo(memoId) {
   const rows = await Store.byIndex('files', 'memoId', memoId);
   for (const r of rows) await Store.del('files', r.id);
 }
+
+/* テストから読み込むための書き出し（ブラウザでは module が無いので何もしない） */
+if (typeof module === 'object' && module.exports) {
+  module.exports = { formatBytes, fileIconFor, ATTACH_MAX_BYTES };
+}

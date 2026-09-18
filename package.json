@@ -1,0 +1,10 @@
+{
+  "name": "memo-studio",
+  "version": "1.6.0",
+  "description": "ブラウザだけで動作するメモ／フィールドノートアプリ（依存ライブラリなし）",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  },
+  "license": "UNLICENSED"
+}

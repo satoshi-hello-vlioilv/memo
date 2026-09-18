@@ -18,6 +18,7 @@ const toFullWidth = s => s
 
 /* 現在の選択範囲を置換し、結果を選択状態で残す */
 function replaceSelection(newText) {
+  pushHistory();
   refs.bodyInput.focus();
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;

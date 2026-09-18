@@ -87,6 +87,15 @@ async function addImageFiles(fileList, sourceName = null) {
   await updateImageCount();
   toast(`画像を ${files.length} 件登録しました`, 'success');
 }
+/* メモを完全に削除するとき、その画像も一緒に消す（ゴミ箱からの完全削除） */
+async function deleteImagesOfMemo(memoId) {
+  const rows = await Store.byIndex('images', 'memoId', memoId);
+  for (const r of rows) {
+    await Store.del('images', r.id);
+    const url = urlMap.get(r.id);
+    if (url) { URL.revokeObjectURL(url); urlMap.delete(r.id); }
+  }
+}
 async function removeImage(id) {
   const img = state.images.find(x => x.id === id);
   const ok = await confirmDialog({

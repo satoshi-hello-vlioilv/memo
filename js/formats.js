@@ -72,11 +72,12 @@ async function fmDelete() {
   toast('フォーマットを削除しました', 'success');
 }
 function switchMgmtSection(section) {
-  const isFormats = section === 'formats';
-  refs.mgmtNavFormats.classList.toggle('active', isFormats);
-  refs.mgmtNavTags.classList.toggle('active', !isFormats);
-  refs.mgmtSectionFormats.hidden = !isFormats;
-  refs.mgmtSectionTags.hidden = isFormats;
+  refs.mgmtNavFormats.classList.toggle('active', section === 'formats');
+  refs.mgmtNavTags.classList.toggle('active', section === 'tags');
+  refs.mgmtNavKeys.classList.toggle('active', section === 'keys');
+  refs.mgmtSectionFormats.hidden = section !== 'formats';
+  refs.mgmtSectionTags.hidden = section !== 'tags';
+  refs.mgmtSectionKeys.hidden = section !== 'keys';
 }
 function openManageModal(section) {
   markModalOpened(refs.manageModal);
@@ -85,9 +86,66 @@ function openManageModal(section) {
   if (section === 'formats') {
     fmLoad(state.formats[0]?.id ?? null);
     refs.fmName.focus();
-  } else {
+  } else if (section === 'tags') {
     refs.tmInput.focus();
   }
+}
+
+/* ============================================================
+   キー操作の一覧（管理画面のセクション。F1 / ? でも開く）
+   ============================================================ */
+const KEY_HELP = [
+  { head: 'メモ', items: [
+    ['Ctrl + S', 'メモを保存'],
+    ['Alt + N', '新規メモ'],
+    ['Alt + ↑ / ↓', '一覧の前後のメモへ移動'],
+    ['Ctrl + F', '検索（本文の編集中はメモ内検索、それ以外は一覧の検索）'],
+    ['F1 または ?', 'このキー操作一覧'],
+    ['Esc', 'メニュー・ダイアログ・検索バーを閉じる'],
+  ]},
+  { head: '本文の編集', items: [
+    ['Ctrl + Z', '元に戻す'],
+    ['Ctrl + Shift + Z / Ctrl + Y', 'やり直す'],
+    ['Ctrl + B', '太字'],
+    ['Ctrl + I', '斜体'],
+    ['Ctrl + K', 'リンクを挿入・編集'],
+    ['Ctrl + V', '貼り付け（書式は本文で扱える形に変換）'],
+    ['Ctrl + Shift + V', '書式なしで貼り付け'],
+    ['Tab', 'タブ文字を入力'],
+    ['Enter', '箇条書き・チェックリストの行では次の項目を作る'],
+  ]},
+  { head: 'メモ内検索（Ctrl + F）', items: [
+    ['Enter', '次の該当箇所へ'],
+    ['Shift + Enter', '前の該当箇所へ'],
+    ['Esc', '検索バーを閉じる'],
+  ]},
+  { head: '画像の拡大表示', items: [
+    ['← / →', '前後の画像'],
+    ['+ / -', '拡大 / 縮小'],
+    ['0', '画面に合わせる'],
+    ['1', '原寸表示'],
+    ['Esc', '閉じる'],
+  ]},
+  { head: '一覧の検索語', items: [
+    ['定例 議事録', '両方を含むメモ（空白区切りは AND）'],
+    ['"打ち合わせ 3月"', '空白を含むひとまとまりの語'],
+    ['-済', 'その語を含まないメモ'],
+    ['tag:業務', 'タグで絞り込む'],
+    ['mark:重要', '目印で絞り込む（mark:none で目印なし）'],
+    ['is:image / is:file', '画像・添付ファイルがあるメモ'],
+    ['is:untagged', 'タグが付いていないメモ'],
+    ['date:2026-09-18', '作成日で絞り込む（date:2026-09 / date:今日 も可）'],
+    ['after:2026-09-01', 'その日以降に作成（before: はそれ以前）'],
+    ['updated:今日', '更新日で絞り込む'],
+    ['title:議事録', 'タイトルだけを対象にする（body: は本文だけ）'],
+  ]},
+];
+function renderKeysHelp() {
+  refs.keysBody.innerHTML = KEY_HELP.map(sec => `
+    <div class="keys-sec">
+      <h4>${esc(sec.head)}</h4>
+      <dl>${sec.items.map(([k, v]) => `<div class="keys-row"><dt><kbd>${esc(k)}</kbd></dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+    </div>`).join('');
 }
 /* フォーマット本文内の {{key}} を適用時点の値に解決する（{{cursor}} は除く） */
 function resolveFormatTokens(now) {

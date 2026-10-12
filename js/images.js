@@ -52,6 +52,7 @@ function renderImages() {
       <figcaption class="thumb-name" title="${esc(img.name)}">${esc(img.name)}</figcaption>
       <button class="t-insert" title="本文に挿入"><i class="fa-solid fa-text-width"></i> 本文に挿入</button>
     </figure>`).join('');
+  renderMediaStrip();
 }
 async function updateImageCount() {
   if (state.currentId === null) return;

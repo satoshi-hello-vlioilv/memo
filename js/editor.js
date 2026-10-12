@@ -245,14 +245,15 @@ function panelEffectivelyOpen() {
 function applyPanelState() {
   const open = panelEffectivelyOpen();
   refs.app.classList.toggle('panel-closed', !open);
-  refs.btnPanelOpen.hidden = open;
+  /* パネルの開閉ボタンは本文上の帯にあるので、表示を合わせる */
+  renderMediaStrip();
 }
 function togglePanel(open) {
   state.panelOpen = open;
   /* 手動操作は自動折りたたみより優先する（狭い画面でも開けるように） */
   panelAutoClosed = false;
   applyPanelState();
-  savePref('panelOpen', open);
+  savePref('mediaPanelOpen', open);
 }
 /* 幅の変化に追従する。狭くなった時点で自動的に畳み、広がったら戻す */
 function syncPanelToWidth() {

@@ -597,7 +597,7 @@ function bindEvents() {
   });
   window.addEventListener('resize', applyImgPanelWidth);
   refs.btnPanelToggle.addEventListener('click', () => togglePanel(false));
-  refs.btnPanelOpen.addEventListener('click', () => togglePanel(true));
+  bindMediaStrip();
   refs.btnSidebarClose.addEventListener('click', toggleSidebar);
   refs.btnSidebarOpen.addEventListener('click', toggleSidebar);
 

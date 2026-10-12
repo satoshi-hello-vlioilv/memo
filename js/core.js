@@ -174,7 +174,7 @@ const state = {
   query: '', imageOnly: false, fileOnly: false,
   searchScope: { title: true, tags: true, body: true },
   searchHistory: [],
-  thumbSize: 160, panelOpen: true, sidebarOpen: true,
+  thumbSize: 160, panelOpen: false, sidebarOpen: true,
   mobileTab: 'list',   /* 幅768px以下のタブ表示（list/editor/files） */
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc', sortKey: 'updatedAt',
@@ -198,7 +198,7 @@ function collectRefs() {
     'searchInput','searchClear','searchScope','searchSuggest','filterBar','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'bulkBar','bulkCount','btnBulkAll','bulkAllLabel','bulkNormalActs','bulkTrashActs','btnBulkTag','bulkMarkSelect','btnBulkExport','btnBulkTrash','btnBulkRestore','btnBulkPurge',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
-    'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagsSuggest','tagsPreview',
+    'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagsSuggest','tagsPreview','btnAddMedia','mediaStrip','mediaInput',
     'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnToolMore','toolMore','btnMic','recIndicator','recTime','btnShowMarks',
     'btnUndo','btnRedo','blockSelect','btnBold','btnItalic','btnLink','fontFamilySelect','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',
@@ -207,7 +207,7 @@ function collectRefs() {
     'interimBar','interimText','bodyInput','charCount','saveState',
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
-    'imgPanel','imgPanelResizer','imgCount','btnPanelToggle','btnPanelOpen','btnAddImage','fileInput',
+    'imgPanel','imgPanelResizer','imgCount','btnPanelToggle','btnAddImage','fileInput',
     'thumbSize','thumbGrid','imgEmpty','attachCount','btnAddAttach','attachInput','attachList','attachEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
     'lbClose','lbStage','lbImg','lbPrev','lbNext',
@@ -341,7 +341,9 @@ async function loadPrefs() {
     const rows = await Store.getAll('prefs');
     const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
     if (typeof map.thumbSize === 'number') state.thumbSize = map.thumbSize;
-    if (typeof map.panelOpen === 'boolean') state.panelOpen = map.panelOpen;
+    /* 画像パネルは「必要なときに開く」既定へ変えたため、旧キー panelOpen
+       （以前は既定で開いていた）は読まず、新しいキーで覚え直す */
+    if (typeof map.mediaPanelOpen === 'boolean') state.panelOpen = map.mediaPanelOpen;
     if (typeof map.sidebarOpen === 'boolean') state.sidebarOpen = map.sidebarOpen;
     if (typeof map.groupByDate === 'boolean') state.groupByDate = map.groupByDate;
     if (map.groupDateField === 'createdAt' || map.groupDateField === 'updatedAt') state.groupDateField = map.groupDateField;

@@ -21,7 +21,6 @@
             <span class="brand-name">Memo Studio</span>
             <span class="brand-version" id="brandVersion" title="バージョン情報"></span>
           </span>
-          <span class="brand-sub">FIELD NOTES</span>
         </div>
       </div>
     </div>
@@ -142,6 +141,8 @@
         <div class="meta-row">
           <span class="stamp"><i class="fa-regular fa-calendar-plus"></i> 作成 <span id="stampCreated">—</span></span>
           <span class="stamp"><i class="fa-regular fa-clock"></i> 更新 <span id="stampUpdated">—</span></span>
+          <!-- 画像・添付がまだ無いメモでは、帯の代わりにこのボタンだけを出す -->
+          <button id="btnAddMedia" class="add-media" title="このメモに画像やファイルを追加（ドラッグ&amp;ドロップ・貼り付けでも追加できます）"><i class="fa-solid fa-paperclip"></i> 画像・ファイルを追加</button>
           <span class="mark-picker" id="markPicker"></span>
         </div>
         <div class="tags-row" style="position:relative;">
@@ -150,6 +151,9 @@
           <div class="tags-suggest" id="tagsSuggest" hidden=""></div>
           <div class="tags-preview" id="tagsPreview"></div>
         </div>
+        <!-- 画像・添付の帯。中身があるときだけ表示し、大きく見たいときは右のパネルを開く -->
+        <div class="media-strip" id="mediaStrip" hidden=""></div>
+        <input type="file" id="mediaInput" multiple="" hidden="">
       </div>
 
       <div class="toolbar">
@@ -303,7 +307,6 @@
     </div>
   </aside>
 
-  <button id="btnPanelOpen" class="panel-open-tab" title="画像パネルを開く" hidden=""><i class="fa-regular fa-images"></i></button>
 </div>
 
 <!-- ======== ドロップオーバーレイ ======== -->
@@ -485,6 +488,7 @@
 <script src="js/ctxmenu.js"></script>
 <script src="js/images.js"></script>
 <script src="js/files.js"></script>
+<script src="js/media.js"></script>
 <script src="js/speech.js"></script>
 <script src="js/formats.js"></script>
 <script src="js/data.js"></script>

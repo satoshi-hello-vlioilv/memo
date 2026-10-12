@@ -54,6 +54,7 @@ function renderAttachments() {
       <button class="attach-act attach-dl" title="ダウンロード"><i class="fa-solid fa-download"></i></button>
       <button class="attach-act attach-del" title="削除"><i class="fa-regular fa-trash-can"></i></button>
     </li>`).join('');
+  renderMediaStrip();
 }
 
 async function addAttachmentFiles(fileList, sourceName = null) {

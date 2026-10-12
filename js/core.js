@@ -22,6 +22,15 @@ const fmtDateTime = ts => `${fmtDate(ts)} ${fmtTime(ts)}`;
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 const fmtWeekday = ts => DAY_NAMES[new Date(ts).getDay()];
 const isToday = ts => fmtDate(ts) === fmtDate(Date.now());
+/* 一覧に出す短い日付。今日は時刻、昨日は「昨日」、今年は月/日、それより前は年月日。
+   一覧は2行に詰めたので、日付の欄も幅を取らない表記にする（項目C の決定案） */
+function fmtListDate(ts, now = Date.now()) {
+  if (fmtDate(ts) === fmtDate(now)) return fmtTime(ts);
+  if (fmtDate(ts) === fmtDate(now - 86400000)) return '昨日';
+  const d = new Date(ts);
+  if (d.getFullYear() === new Date(now).getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
+  return fmtDate(ts);
+}
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const tagClass = name => {
   let h = 0;
@@ -392,5 +401,5 @@ const savePrefDebounced = debounce(savePref, 350);
 /* テストから読み込むための書き出し（ブラウザでは module が無いので何もしない） */
 if (typeof module === 'object' && module.exports) {
   module.exports = { esc, pad, parseTags, tagClass, countBy, serialized, debounce,
-    fmtDate, fmtTime, fmtDateTime, fmtWeekday, MEMO_MARKS, markById };
+    fmtDate, fmtTime, fmtDateTime, fmtWeekday, fmtListDate, MEMO_MARKS, markById };
 }

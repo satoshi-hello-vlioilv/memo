@@ -491,7 +491,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 .memo-item{
   position:relative;
-  padding:11px 12px 10px 16px;
+  padding:9px 12px 9px 16px;
   border-radius:8px;
   cursor:pointer;
   transition:background-color .12s;
@@ -522,18 +522,32 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .memo-item.active .mi-title{color:var(--text)}
 .mi-date{font-size:10.5px;color:var(--inv-sub);flex-shrink:0}
 .memo-item.active .mi-date{color:var(--text-sub)}
+/* 2行目：抜粋（先頭・伸縮）＋タグ（右寄せ）＋件数 */
+.mi-line2{
+  display:flex;align-items:center;gap:8px;margin-top:3px;min-width:0;
+  font-size:11.5px;color:var(--inv-sub);
+}
 .mi-snippet{
-  margin-top:3px;font-size:11.5px;color:var(--inv-sub);
+  flex:1;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.memo-item.active .mi-snippet{color:var(--text-sub)}
+.mi-empty{opacity:.6}
+.memo-item.active .mi-line2{color:var(--text-sub)}
+.mi-tgs{flex-shrink:0;display:flex;align-items:center;gap:6px;max-width:48%;overflow:hidden}
+/* タグは色付きの文字で示す（チップの塗りをやめて一覧の騒がしさを抑える）。
+   色は tagClass と同じ6系統で、暗い一覧の上と、選択中の明るい行の上とで濃さを変える */
+.mi-tg{font-size:11px;font-weight:600;white-space:nowrap}
+.mi-tg.c0{color:#7FD0C3}.mi-tg.c1{color:#E2BC6F}.mi-tg.c2{color:#E59A82}
+.mi-tg.c3{color:#C9A3DC}.mi-tg.c4{color:#8FB9E4}.mi-tg.c5{color:#B4CB7E}
+.memo-item.active .mi-tg.c0{color:#0E5B51}.memo-item.active .mi-tg.c1{color:#7A5A14}
+.memo-item.active .mi-tg.c2{color:#93402C}.memo-item.active .mi-tg.c3{color:#6B3E7E}
+.memo-item.active .mi-tg.c4{color:#2D5A87}.memo-item.active .mi-tg.c5{color:#4E661F}
+.mi-tg-more{font-size:10.5px;opacity:.75}
 .mi-snippet mark{
   background:rgba(19,121,108,.4);color:var(--inv-text);
   border-radius:2px;padding:0 1px;
 }
 .memo-item.active .mi-snippet mark{background:rgba(19,121,108,.18);color:var(--primary-deep)}
-.mi-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;min-height:18px}
-.mi-tags{display:flex;gap:4px;overflow:hidden;flex-wrap:nowrap}
 .mi-imgs{
   display:inline-flex;align-items:center;gap:4px;flex-shrink:0;
   font-size:10.5px;font-family:var(--font-mono);color:var(--inv-sub);
@@ -1637,7 +1651,8 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   font-size:11.5px;color:var(--inv-text);
 }
 .trash-bar i{color:#F09A86;font-size:12px}
-.trash-bar span{flex:1;min-width:0}
+.trash-bar > span{flex:1 1 140px;min-width:0}
+.trash-bar > span .mono{white-space:nowrap}
 .trash-bar .btn{height:24px;padding:0 9px;font-size:11px}
 .sidebar-head .icon-btn.active{color:#F09A86;background:rgba(194,69,50,.2)}
 #app.trash-view .memo-item{cursor:default}

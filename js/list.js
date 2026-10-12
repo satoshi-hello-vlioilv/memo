@@ -343,19 +343,23 @@ function memoDateField() {
   if (state.groupByDate) return state.groupDateField;
   return state.sortKey === 'createdAt' ? 'createdAt' : 'updatedAt';
 }
+/* 一覧の1件。2行に収める：
+   1行目 目印・タイトル・日付 ／ 2行目 本文の抜粋（先頭）・タグ（右寄せ・最大2つ）・添付/画像の件数。
+   本文を先に置き、タグは右端の列にそろえて「中身 → 分類」の順に読めるようにする（項目C の決定案） */
 function renderMemoItem(m, peek = false) {
   const q = currentQuery();
   const terms = state.searchScope.body ? searchHighlightTerms(q) : [];
   const active  = m.id === state.currentId ? ' active' : '';
   const title   = esc(m.title) || '無題のメモ';
   const dts     = m[memoDateField()] ?? m.updatedAt;
-  const date    = state.trashView ? fmtDate(m.deletedAt)
-    : (isToday(dts) ? fmtTime(dts) : fmtDate(dts));
+  const date    = fmtListDate(state.trashView ? m.deletedAt : dts);
+  const dateTip = fmtDateTime(state.trashView ? m.deletedAt : dts);
   const snippet = makeSnippet(memoPlainBody(m), terms);
-  const tags    = (m.tags || []).slice(0, 3).map(t => tagChip(t)).join('');
-  const more    = (m.tags || []).length > 3 ? `<span class="chip chip-s c4">+${m.tags.length - 3}</span>` : '';
+  const tagList = m.tags || [];
+  const tags    = tagList.slice(0, 2).map(t => `<span class="mi-tg ${tagClass(t)}">#${esc(t)}</span>`).join('') +
+    (tagList.length > 2 ? `<span class="mi-tg-more" title="${esc(tagList.slice(2).join('、'))}">+${tagList.length - 2}</span>` : '');
   const imgs    = m.imageCount > 0
-    ? `<span class="mi-imgs"><i class="fa-regular fa-image"></i>${m.imageCount}</span>` : '';
+    ? `<span class="mi-imgs" title="画像 ${m.imageCount} 枚"><i class="fa-regular fa-image"></i>${m.imageCount}</span>` : '';
   const files   = m.fileCount > 0
     ? `<span class="mi-files" title="添付ファイル ${m.fileCount} 件"><i class="fa-solid fa-paperclip"></i>${m.fileCount}</span>` : '';
   const mark    = markById(m.mark);
@@ -371,9 +375,8 @@ function renderMemoItem(m, peek = false) {
          <button class="mi-act mi-purge" title="完全に削除する（取り消せません）"><i class="fa-regular fa-trash-can"></i> 完全削除</button>
        </div>` : '';
   return `<li class="memo-item${active}${peek ? ' peek' : ''}${state.selectMode ? ' selectable' : ''}" data-id="${m.id}"${mark ? ` data-mark="${mark.id}"` : ''}>
-    <div class="mi-top">${check}${markEl}${draft}<span class="mi-title">${title}</span><span class="mi-date mono">${date}</span></div>
-    ${snippet ? `<div class="mi-snippet">${snippet}</div>` : ''}
-    <div class="mi-foot"><div class="mi-tags">${tags}${more}</div>${files}${imgs}</div>
+    <div class="mi-top">${check}${markEl}${draft}<span class="mi-title">${title}</span><span class="mi-date mono" title="${dateTip}">${date}</span></div>
+    <div class="mi-line2"><span class="mi-snippet">${snippet || '<span class="mi-empty">本文なし</span>'}</span>${tags ? `<span class="mi-tgs">${tags}</span>` : ''}${files}${imgs}</div>
     ${acts}
   </li>`;
 }

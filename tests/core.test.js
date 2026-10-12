@@ -81,3 +81,11 @@ test('保存データに書き出すのはフォントの識別子だけ', () =>
   }
   assert.equal(body.fontById('不明'), null);
 });
+
+test('一覧の短い日付：今日は時刻、昨日は「昨日」、今年は月/日、それ以前は年月日', () => {
+  const now = new Date(2026, 9, 12, 15, 30).getTime();
+  assert.strictEqual(core.fmtListDate(new Date(2026, 9, 12, 9, 5).getTime(), now), '09:05');
+  assert.strictEqual(core.fmtListDate(new Date(2026, 9, 11, 23, 59).getTime(), now), '昨日');
+  assert.strictEqual(core.fmtListDate(new Date(2026, 0, 3).getTime(), now), '1/3');
+  assert.strictEqual(core.fmtListDate(new Date(2025, 11, 31).getTime(), now), '2025/12/31');
+});

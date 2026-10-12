@@ -12,6 +12,8 @@
 
   <!-- ======== トップバー ======== -->
   <header class="topbar">
+    <!-- 幅 768px 以下：メモを開いているあいだはロゴの代わりに「‹ 一覧」を出す（項目G の決定案） -->
+    <button id="btnBack" class="back-btn" hidden=""><i class="fa-solid fa-chevron-left"></i><span id="btnBackLabel">一覧</span></button>
     <div class="brand-group">
       <button id="btnToggleSidebar" class="icon-btn-inv" title="サイドバーの開閉"><i class="fa-solid fa-bars"></i></button>
       <div class="brand">
@@ -29,18 +31,20 @@
       <button id="btnImport" class="icon-btn-inv" title="データのインポート"><i class="fa-solid fa-file-import"></i></button>
       <button id="btnExport" class="icon-btn-inv" title="データのエクスポート"><i class="fa-solid fa-file-export"></i></button>
       <button id="btnManage" class="btn btn-ghost-inv"><i class="fa-solid fa-sliders"></i> 管理</button>
+      <!-- 幅 768px 以下では取り込み・書き出し・管理を「⋮」にまとめ、ヘッダーを1段に保つ -->
+      <div class="app-more-wrap">
+        <button id="btnAppMore" class="icon-btn-inv" title="取り込み・書き出し・管理" aria-haspopup="true" aria-expanded="false"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+        <div class="app-more" id="appMore" hidden="">
+          <button class="am-item" data-act="import"><i class="fa-solid fa-file-import"></i> データを取り込む</button>
+          <button class="am-item" data-act="export"><i class="fa-solid fa-file-export"></i> データを書き出す</button>
+          <button class="am-item" data-act="manage"><i class="fa-solid fa-sliders"></i> 管理（フォーマット・タグ・キー操作）</button>
+          <button class="am-item" data-act="trash"><i class="fa-solid fa-trash-can"></i> ゴミ箱</button>
+        </div>
+      </div>
       <button id="btnNew" class="btn btn-primary"><i class="fa-solid fa-plus"></i> 新規メモ</button>
     </div>
   </header>
 
-  <!-- ======== 画面が狭いときのタブ切替（一覧／編集／画像・添付） ========
-       縦積みだと一覧を全部スクロールしないと本文に届かず、戻る手段も無い。
-       幅 768px 以下では 3 つを排他表示にして行き来できるようにする -->
-  <nav class="mobile-tabs" id="mobileTabs">
-    <button class="mtab" data-tab="list"><i class="fa-solid fa-list-ul"></i> 一覧</button>
-    <button class="mtab" data-tab="editor"><i class="fa-solid fa-pen"></i> 編集</button>
-    <button class="mtab" data-tab="files"><i class="fa-regular fa-images"></i> 画像・添付</button>
-  </nav>
 
   <!-- ======== サイドバー：検索・一覧 ======== -->
   <aside class="sidebar">
@@ -184,9 +188,7 @@
         <div class="tool-group">
           <button id="btnUndo" class="icon-btn" title="元に戻す（Ctrl+Z）" disabled=""><i class="fa-solid fa-rotate-left"></i></button>
           <button id="btnRedo" class="icon-btn" title="やり直す（Ctrl+Shift+Z）" disabled=""><i class="fa-solid fa-rotate-right"></i></button>
-        </div>
-        <span class="tool-div"></span>
-        <div class="tool-group">
+          <span class="tool-sep"></span>
           <select id="blockSelect" class="fmt-select fmt-select--sm" title="段落の種類（見出し・箇条書き・チェックリスト）">
             <option value="">段落</option>
             <option value="p">本文</option>
@@ -196,6 +198,10 @@
             <option value="li">箇条書き</option>
             <option value="task">チェックリスト</option>
           </select>
+          <!-- 幅 768px 以下では文字の書式を「Aa」で開く2段目にしまう -->
+          <button id="btnFmtToggle" class="fmt-toggle" title="文字の書式（太字・リンク・サイズ・色）" aria-expanded="false">Aa</button>
+        </div>
+        <div class="tool-group fmt-group">
           <span class="tool-sep"></span>
           <button id="btnBold" class="icon-btn" title="太字（Ctrl+B）"><i class="fa-solid fa-bold"></i></button>
           <button id="btnItalic" class="icon-btn" title="斜体（Ctrl+I）"><i class="fa-solid fa-italic"></i></button>

@@ -18,7 +18,8 @@ function renderMediaStrip() {
   refs.mediaStrip.hidden = !has;
   refs.btnAddMedia.hidden = has;
   if (!has) { refs.mediaStrip.innerHTML = ''; return; }
-  const open = panelEffectivelyOpen() && !isMobileLayout();
+  const mobile = isMobileLayout();
+  const open = panelEffectivelyOpen() && !mobile;
   refs.mediaStrip.innerHTML =
     imgs.map((img, i) =>
       `<button class="ms-thumb" data-index="${i}" title="${esc(img.name)}（クリックで拡大）">
@@ -27,9 +28,11 @@ function renderMediaStrip() {
       `<button class="ms-file" data-id="${f.id}" title="${esc(f.name)}（${formatBytes(f.size)}・クリックでダウンロード）">
          <i class="fa-regular ${fileIconFor(f.name, f.type)}"></i><span class="ms-file-name">${esc(f.name)}</span></button>`).join('') +
     `<button class="ms-add" data-act="add" title="画像・ファイルを追加"><i class="fa-solid fa-plus"></i></button>` +
-    `<button class="ms-panel${open ? ' active' : ''}" data-act="panel" title="${open ? '右のパネルを閉じる' : '画像と添付を右のパネルで大きく表示'}">` +
-      (open ? '<i class="fa-solid fa-xmark"></i> パネルを閉じる' : '<i class="fa-solid fa-table-columns"></i> パネルで見る') +
-    `</button>`;
+    /* 狭い画面ではパネルではなく「画像・添付」の画面へ移るので、言い方を変える */
+    (mobile
+      ? `<button class="ms-panel" data-act="panel" title="画像と添付を大きく表示"><i class="fa-regular fa-images"></i> 大きく見る</button>`
+      : `<button class="ms-panel${open ? ' active' : ''}" data-act="panel" title="${open ? '右のパネルを閉じる' : '画像と添付を右のパネルで大きく表示'}">` +
+        (open ? '<i class="fa-solid fa-xmark"></i> パネルを閉じる' : '<i class="fa-solid fa-table-columns"></i> パネルで見る') + `</button>`);
 }
 
 /* 画像と、それ以外のファイルを振り分けて登録する（帯の「＋」から） */

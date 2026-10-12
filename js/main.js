@@ -22,6 +22,18 @@ function bindEvents() {
   /* --- 選択モード・一括操作 --- */
   /* 一覧の「⋯」メニュー。複数選択は押したら一覧の操作に移るので閉じる */
   const listMore = bindPopover(refs.btnListMore, refs.listMore);
+  /* 幅 768px 以下のヘッダーの「⋮」：取り込み・書き出し・管理・ゴミ箱 */
+  const appMore = bindPopover(refs.btnAppMore, refs.appMore);
+  refs.appMore.addEventListener('click', e => {
+    const item = e.target.closest('.am-item');
+    if (!item) return;
+    appMore.close();
+    const act = item.dataset.act;
+    if (act === 'import') refs.btnImport.click();
+    else if (act === 'export') refs.btnExport.click();
+    else if (act === 'manage') refs.btnManage.click();
+    else if (act === 'trash') { toggleTrashView(true); setMobileTab('list'); }
+  });
   refs.btnSelectMode.addEventListener('click', () => { listMore.close(); toggleSelectMode(); });
   refs.btnBulkAll.addEventListener('click', () => toggleSelectAll(filteredMemos()));
   refs.btnBulkTag.addEventListener('click', bulkAddTags);
@@ -529,6 +541,7 @@ function bindEvents() {
     captureBodySelection();
   });
   keepBodyFocus(refs.btnBold);
+  keepBodyFocus(refs.btnFmtToggle);
   refs.btnBold.addEventListener('click', toggleBold);
   keepBodyFocus(refs.btnItalic);
   refs.btnItalic.addEventListener('click', toggleItalic);
@@ -629,7 +642,11 @@ function bindEvents() {
     window.addEventListener('mouseup', onUp);
   });
   window.addEventListener('resize', applyImgPanelWidth);
-  refs.btnPanelToggle.addEventListener('click', () => togglePanel(false));
+  /* 狭い画面では画像・添付は1つの画面なので、» はメモへ戻る操作になる */
+  refs.btnPanelToggle.addEventListener('click', () => {
+    if (isMobileLayout()) setMobileTab('editor');
+    else togglePanel(false);
+  });
   bindMediaStrip();
   refs.btnSidebarClose.addEventListener('click', toggleSidebar);
   refs.btnSidebarOpen.addEventListener('click', toggleSidebar);

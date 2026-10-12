@@ -758,18 +758,35 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .save-btn.dirty .save-state i{font-size:7px;color:#FFD27A}
 .save-btn.fresh .save-state i{font-size:9px}
 
-/* 画面が狭いときのタブ切替。広い画面では使わないので既定は非表示 */
-.mobile-tabs{display:none;background:var(--ink-900);border-bottom:1px solid var(--ink-line);flex-shrink:0}
-.mtab{
-  flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
-  padding:11px 6px;
-  color:var(--inv-sub);font-size:12.5px;font-weight:600;
-  border-bottom:2px solid transparent;
-  transition:color .12s,border-color .12s,background-color .12s;
+/* 狭い画面だけで使う部品（既定は非表示）：戻るボタン・ヘッダーの「⋮」・書式の「Aa」 */
+.back-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  height:36px;padding:0 10px 0 6px;margin-right:auto;border-radius:7px;
+  color:var(--inv-text);font-size:14px;font-weight:600;
 }
-.mtab i{font-size:12px}
-.mtab:hover{color:var(--inv-text)}
-.mtab.active{color:var(--inv-text);border-bottom-color:var(--primary);background:var(--ink-850)}
+.back-btn i{font-size:13px}
+.back-btn:hover{background:rgba(255,255,255,.1)}
+.app-more-wrap{display:none;position:relative}
+.app-more{
+  position:absolute;right:0;top:calc(100% + 6px);z-index:140;
+  min-width:240px;padding:6px;
+  background:var(--ink-850);border:1px solid var(--ink-700);border-radius:10px;
+  box-shadow:var(--shadow-2);
+  display:flex;flex-direction:column;gap:2px;
+}
+.am-item{
+  display:flex;align-items:center;gap:10px;width:100%;
+  height:40px;padding:0 12px;border-radius:7px;
+  color:var(--inv-text);font-size:13px;text-align:left;
+}
+.am-item i{width:15px;text-align:center;color:var(--inv-sub)}
+.am-item:hover{background:var(--ink-800)}
+.fmt-toggle{
+  display:none;align-items:center;justify-content:center;
+  width:36px;height:30px;border-radius:6px;
+  border:1px solid var(--line);font-size:13px;font-weight:700;color:var(--text);
+}
+.fmt-toggle.active{background:var(--primary-soft);border-color:var(--primary-line);color:var(--primary-deep)}
 
 /* ツールバーのオーバーフローメニュー（使用頻度の低い操作の格納先）。
    ツールバーを1段に保ちつつ、機能への到達手段は残す */
@@ -1595,29 +1612,43 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   }
 }
 @media (max-width: 768px) {
-  /* 一覧／編集／画像・添付をタブで排他表示する。縦積みのままだと本文へ
-     届くまでに一覧を延々スクロールする必要があり、戻る手段も無かった */
+  /* 一覧 → メモ → 画像・添付 を1画面ずつ表示する（項目G の決定案）。
+     縦積みのままだと本文へ届くまでに一覧を延々スクロールする必要があり、
+     タブを常に出すと本文の高さが削られるため、メモを開いたら「‹ 一覧」で戻る形にする */
   #app {
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
-  .topbar { padding: 0 10px; height: auto; min-height: var(--topbar-h); flex-wrap: wrap; }
-  .mobile-tabs { display: flex; }
+  /* ヘッダーは1段。取り込み・書き出し・管理は「⋮」に、サイドバーの開閉は使わないので隠す */
+  .topbar { padding: 0 6px 0 4px; min-height: 48px; flex-shrink: 0; }
+  #btnToggleSidebar, .topbar #btnImport, .topbar #btnExport, .topbar #btnManage { display: none; }
+  .app-more-wrap { display: inline-flex; }
+  .brand-name { white-space: nowrap; }
+  #app:not([data-mtab="list"]) .brand-group { display: none; }
+  .topbar #btnNew { height: 34px; padding: 0 12px; }
 
-  /* 表示中のタブだけを残し、残りの高さいっぱいに広げる */
+  /* 表示中の画面だけを残し、残りの高さいっぱいに広げる */
   .sidebar, .editor, .imgpanel { display: none; min-height: 0; flex: 1 1 auto; border: none; }
   #app[data-mtab="list"]   .sidebar  { display: flex; }
   #app[data-mtab="editor"] .editor   { display: flex; overflow: hidden; }
   #app[data-mtab="files"]  .imgpanel { display: flex; }
-  /* サイドバー／パネルの開閉はタブ表示より優先しない（タブが唯一の導線） */
+  /* 一覧の見出し行（サイドバーの開閉・ゴミ箱）は使わない。ゴミ箱はヘッダーの「⋮」から */
+  .sidebar-head { display: none; }
   #app.sidebar-closed .sidebar { pointer-events: auto; }
-  .sidebar-open-tab, .imgpanel-resizer { display: none !important; }
+  .sidebar-open-tab, .imgpanel-resizer, #btnPanelToggle { display: none !important; }
 
-  .editor-sheet { margin: 8px; width: calc(100% - 16px); }
-  .sheet-head, .toolbar { padding: 9px 13px; }
-  .body-editable { padding: 13px; }
-  .toolbar { flex-wrap: wrap; }
+  .editor-sheet { margin: 0; width: 100%; }
+  .sheet-head { padding: 12px 14px 0; }
+  .body-editable { padding: 12px 14px; }
+  /* ツールバー：1段目は取り消し・段落・Aa・保存・⋯。文字の書式は「Aa」で2段目に開く */
+  .toolbar { padding: 6px 10px; flex-wrap: wrap; row-gap: 0; }
+  .fmt-toggle { display: inline-flex; }
+  .fmt-group { display: none; order: 9; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto;
+               margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .fmt-group > .tool-sep:first-child { display: none; }
+  .toolbar.fmt-open .fmt-group { display: flex; }
+  #blockSelect { width: 112px; }
 }
 
 /* ============================================================

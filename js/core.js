@@ -202,7 +202,8 @@ const state = {
   searchScope: { title: true, tags: true, body: true },
   searchHistory: [],
   panelOpen: false, sidebarOpen: true,
-  mobileTab: 'list',   /* 幅768px以下のタブ表示（list/editor/files） */
+  mobileTab: 'list',   /* 幅768px以下で表示中の画面（list/editor/files） */
+  fmtRowOpen: false,   /* 幅768px以下で文字の書式の段（Aa）を開いているか */
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc', sortKey: 'updatedAt',
   showLineMarks: false,
@@ -220,7 +221,7 @@ const state = {
 const refs = {};
 function collectRefs() {
   const ids = [
-    'app','mobileTabs','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
+    'app','btnBack','btnBackLabel','btnAppMore','appMore','btnFmtToggle','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
     'sidebarTitle','btnTrash','trashBar','trashCount','btnEmptyTrash','btnExitTrash',
     'searchInput','searchClear','searchScope','searchSuggest','btnFilter','filterPop','filterBadge','filterBar','btnListMore','listMore','groupFieldRow','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'bulkBar','bulkCount','btnBulkAll','bulkAllLabel','bulkNormalActs','bulkTrashActs','btnBulkTag','bulkMarkSelect','btnBulkExport','btnBulkTrash','btnBulkRestore','btnBulkPurge',
@@ -370,6 +371,7 @@ async function loadPrefs() {
     /* 画像パネルは「必要なときに開く」既定へ変えたため、旧キー panelOpen
        （以前は既定で開いていた）は読まず、新しいキーで覚え直す */
     if (typeof map.mediaPanelOpen === 'boolean') state.panelOpen = map.mediaPanelOpen;
+    if (typeof map.fmtRowOpen === 'boolean') state.fmtRowOpen = map.fmtRowOpen;
     if (typeof map.sidebarOpen === 'boolean') state.sidebarOpen = map.sidebarOpen;
     if (typeof map.groupByDate === 'boolean') state.groupByDate = map.groupByDate;
     if (map.groupDateField === 'createdAt' || map.groupDateField === 'updatedAt') state.groupDateField = map.groupDateField;

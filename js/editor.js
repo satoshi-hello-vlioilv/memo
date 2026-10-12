@@ -317,32 +317,54 @@ function syncPanelToWidth() {
   }
 }
 /* ============================================================
-   画面が狭いときのタブ切替（一覧／編集／画像・添付）
+   画面が狭いとき（幅 768px 以下）の画面遷移：一覧 → メモ → 画像・添付
+   ------------------------------------------------------------
+   以前は「一覧／編集／画像・添付」のタブを常に出していたが、スマホの
+   メモアプリで一般的な「一覧からメモを開き、‹ で戻る」形にして、
+   タブの段を本文に回す（UI/UX 見直し 項目G の決定案）
    ============================================================ */
 const MOBILE_MQ = typeof matchMedia === 'function' ? matchMedia('(max-width: 768px)') : null;
 const isMobileLayout = () => !!(MOBILE_MQ && MOBILE_MQ.matches);
 
 function applyMobileTab() {
   refs.app.dataset.mtab = state.mobileTab;
-  for (const b of $$('.mtab', refs.mobileTabs)) {
-    b.classList.toggle('active', b.dataset.tab === state.mobileTab);
-  }
+  /* 戻る先：画像・添付 → メモ、メモ → 一覧 */
+  const inner = isMobileLayout() && state.mobileTab !== 'list';
+  refs.btnBack.hidden = !inner;
+  refs.btnBackLabel.textContent = state.mobileTab === 'files' ? 'メモ' : '一覧';
+  renderMediaStrip();   /* 帯のボタンの言い方が幅で変わる */
+  refs.btnBack.title = state.mobileTab === 'files' ? 'メモに戻る' : 'メモ一覧に戻る';
 }
 function setMobileTab(tab) {
   state.mobileTab = tab;
   applyMobileTab();
 }
-/* メモを開いたら編集タブへ移る。狭い画面では、開いた直後に本文が見えないと
+/* メモを開いたらメモの画面へ移る。狭い画面では、開いた直後に本文が見えないと
    何が起きたのか分からないため */
 function focusEditorTab() {
   if (isMobileLayout()) setMobileTab('editor');
 }
+/* 文字の書式の段（狭い画面で「Aa」から開く） */
+function applyFmtRowState() {
+  const toolbar = refs.btnFmtToggle.closest('.toolbar');
+  toolbar.classList.toggle('fmt-open', state.fmtRowOpen);
+  refs.btnFmtToggle.classList.toggle('active', state.fmtRowOpen);
+  refs.btnFmtToggle.setAttribute('aria-expanded', String(state.fmtRowOpen));
+}
 function setupMobileTabs() {
   applyMobileTab();
-  refs.mobileTabs.addEventListener('click', e => {
-    const btn = e.target.closest('.mtab');
-    if (btn) setMobileTab(btn.dataset.tab);
+  applyFmtRowState();
+  refs.btnBack.addEventListener('click', () => setMobileTab(state.mobileTab === 'files' ? 'editor' : 'list'));
+  refs.btnFmtToggle.addEventListener('click', () => {
+    state.fmtRowOpen = !state.fmtRowOpen;
+    applyFmtRowState();
+    savePref('fmtRowOpen', state.fmtRowOpen);
   });
+  /* 幅をまたいだら戻るボタンの表示を合わせる */
+  if (MOBILE_MQ) {
+    if (MOBILE_MQ.addEventListener) MOBILE_MQ.addEventListener('change', applyMobileTab);
+    else MOBILE_MQ.addListener(applyMobileTab);
+  }
 }
 
 function setupResponsivePanel() {

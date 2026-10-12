@@ -34,7 +34,7 @@ async function saveDraftNow() {
     key,
     memoId: state.currentId,
     title: refs.titleInput.value,
-    tags : refs.tagsInput.value,
+    tags : pendingTagsValue(),
     body : serializeBody(),
     mark : state.currentMark,
     savedAt: Date.now(),
@@ -62,6 +62,7 @@ async function clearDraftFor(id) { await clearDraft(draftKeyFor(id)); }
 function applyDraft(draft) {
   refs.titleInput.value = draft.title || '';
   refs.tagsInput.value  = draft.tags || '';
+  refs.tagEntry.value   = '';
   state.currentMark = markById(draft.mark) ? draft.mark : null;
   deserializeBody(draft.body || '');
   renderEditorMeta(); renderCharCount();

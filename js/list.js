@@ -27,14 +27,17 @@ function renderTagMasterList() {
   `).join('');
   refs.mgmtTagCount.textContent = state.tagsMaster.length;
 }
+/* 入力中のタグ（区切り文字の後ろの部分）を候補探しに使う */
 function getTagSearchWord() {
-  const parts = refs.tagsInput.value.split(/[,、]\s*/);
+  const parts = refs.tagEntry.value.split(/[,、\s]+/);
   return parts[parts.length - 1];
 }
 function updateTagSuggest() {
   const word = getTagSearchWord().trim().toLowerCase();
   if (!word) { refs.tagsSuggest.hidden = true; return; }
-  const matches = state.tagsMaster.filter(t => t.toLowerCase().includes(word));
+  /* 既に付いているタグは候補に出さない */
+  const have = new Set(parseTags(refs.tagsInput.value));
+  const matches = state.tagsMaster.filter(t => !have.has(t) && t.toLowerCase().includes(word));
   if (matches.length === 0) { refs.tagsSuggest.hidden = true; return; }
   refs.tagsSuggest.innerHTML = matches.map(t => `<div class="sg-item" data-tag="${esc(t)}">${esc(t)}</div>`).join('');
   refs.tagsSuggest.hidden = true;

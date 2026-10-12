@@ -159,18 +159,21 @@
     <div class="editor-sheet" id="sheet" hidden="">
       <div class="sheet-head">
         <input id="titleInput" class="title-input" type="text" placeholder="タイトルを入力" autocomplete="off">
+        <!-- 目印とタグを1行に（項目D の決定案）。目印はボタン1つにまとめ、押すと選べる。
+             タグはチップで並べ、右の入力欄で追加する（× で外す・空のまま Backspace で最後を外す）。
+             作成・更新日時はフッターの保存状態の隣へ移した -->
         <div class="meta-row">
-          <span class="stamp"><i class="fa-regular fa-calendar-plus"></i> 作成 <span id="stampCreated">—</span></span>
-          <span class="stamp"><i class="fa-regular fa-clock"></i> 更新 <span id="stampUpdated">—</span></span>
+          <div class="mark-wrap" id="markPicker"></div>
+          <span class="meta-sep"></span>
+          <div class="tag-editor" id="tagEditor">
+            <span class="tag-chips" id="tagsPreview"></span>
+            <input id="tagEntry" type="text" placeholder="＋タグ" autocomplete="off"
+                   title="タグを入力して Enter（カンマ・空白でも区切れます）。空のまま Backspace で最後のタグを外せます">
+            <input id="tagsInput" type="hidden">
+            <div class="tags-suggest" id="tagsSuggest" hidden=""></div>
+          </div>
           <!-- 画像・添付がまだ無いメモでは、帯の代わりにこのボタンだけを出す -->
           <button id="btnAddMedia" class="add-media" title="このメモに画像やファイルを追加（ドラッグ&amp;ドロップ・貼り付けでも追加できます）"><i class="fa-solid fa-paperclip"></i> 画像・ファイルを追加</button>
-          <span class="mark-picker" id="markPicker"></span>
-        </div>
-        <div class="tags-row" style="position:relative;">
-          <i class="fa-solid fa-tags"></i>
-          <input id="tagsInput" type="text" placeholder="タグ（カンマ区切りで複数指定）" autocomplete="off">
-          <div class="tags-suggest" id="tagsSuggest" hidden=""></div>
-          <div class="tags-preview" id="tagsPreview"></div>
         </div>
         <!-- 画像・添付の帯。中身があるときだけ表示し、大きく見たいときは右のパネルを開く -->
         <div class="media-strip" id="mediaStrip" hidden=""></div>
@@ -285,6 +288,8 @@
           <span><span id="charCount" class="mono">0</span> 文字</span>
           <span class="divider"></span>
           <span id="saveState" class="save-state fresh"></span>
+          <span class="divider"></span>
+          <span class="foot-dates mono" id="footDates">作成 <span id="stampCreated">—</span>・更新 <span id="stampUpdated">—</span></span>
         </div>
         <div class="foot-right">
           <button id="btnCopyText" class="btn btn-soft" title="テキストをクリップボードにコピー"><i class="fa-regular fa-copy"></i> コピー</button>

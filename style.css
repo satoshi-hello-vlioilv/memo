@@ -407,28 +407,6 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .mi-mark{font-size:11px;flex-shrink:0}
 
 /* 編集画面の目印ピッカー */
-.mark-picker{display:inline-flex;align-items:center;gap:3px;margin-left:auto}
-.mark-picker-label{
-  display:inline-flex;align-items:center;gap:5px;
-  font-size:11px;color:var(--text-sub);margin-right:3px;
-}
-.mark-picker-label i{font-size:11px;color:var(--line-strong)}
-.mark-btn{
-  width:24px;height:24px;border-radius:6px;
-  display:inline-flex;align-items:center;justify-content:center;
-  font-size:12px;
-  border:1px solid transparent;
-  transition:background-color .12s,border-color .12s;
-}
-.mark-btn:hover{background:var(--paper-deep)}
-.mark-btn.active{background:var(--primary-soft);border-color:var(--primary-line)}
-.mark-clear{
-  width:20px;height:20px;border-radius:50%;margin-left:2px;
-  display:inline-flex;align-items:center;justify-content:center;
-  color:var(--text-sub);font-size:10px;
-  transition:background-color .12s,color .12s;
-}
-.mark-clear:hover{background:var(--rec-soft);color:var(--rec)}
 
 .list-meta{
   display:flex;justify-content:space-between;align-items:center;
@@ -695,22 +673,63 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 .title-input:focus{border-bottom-color:var(--primary-line)}
 .title-input::placeholder{color:#B9B4A3;font-weight:600}
-.meta-row{display:flex;align-items:center;gap:18px;margin:2px 0 10px}
-.stamp{
-  font-family:var(--font-mono);font-size:11px;color:var(--text-sub);
-  display:inline-flex;align-items:center;gap:6px;letter-spacing:.02em;
+/* 目印ボタン・タグ・画像の追加を1行に（項目D の決定案） */
+.meta-row{display:flex;align-items:center;gap:10px;margin:2px 0 12px;min-width:0}
+.meta-sep{width:1px;height:18px;background:var(--line);flex-shrink:0}
+.mark-wrap{position:relative;flex-shrink:0}
+.mark-main{
+  display:inline-flex;align-items:center;gap:6px;
+  height:28px;padding:0 10px;border-radius:6px;
+  border:1px dashed var(--line-strong);color:var(--text-sub);
+  font-size:12px;white-space:nowrap;
+  transition:background-color .12s,border-color .12s;
 }
-.stamp i{font-size:10px;color:var(--line-strong)}
-.tags-row{
-  display:flex;align-items:center;gap:10px;
-  padding:7px 0 12px;
+.mark-main:hover,.mark-main.open{background:var(--paper)}
+/* 目印が付いているときは、目印の色の帯を左に付けてタグのチップと見分ける */
+.mark-main.on{
+  border:1px solid var(--line);border-left:3px solid var(--mk,var(--line-strong));
+  padding-left:8px;color:var(--text);background:var(--surface);
 }
-.tags-row > i{color:var(--text-sub);font-size:12px}
-.tags-row input{
-  flex:1;border:none;outline:none;background:none;font-size:13px;min-width:120px;
+.mark-main[data-mark="star"]{--mk:#E0A32E}
+.mark-main[data-mark="flag"]{--mk:#D7614F}
+.mark-main[data-mark="check"]{--mk:#2DA091}
+.mark-main[data-mark="hold"]{--mk:#5A96D7}
+.mark-main[data-mark="pin"]{--mk:#AA78C8}
+.mark-main[data-mark="alert"]{--mk:#C9573F}
+.mark-cv{font-size:8px;color:var(--text-sub)}
+.mark-menu{
+  position:absolute;left:0;top:calc(100% + 6px);z-index:60;
+  min-width:172px;padding:6px;
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;
+  box-shadow:var(--shadow-2);
+  display:flex;flex-direction:column;gap:2px;
 }
-.tags-row input::placeholder{color:#B9B4A3}
-.tags-preview{display:flex;gap:5px;flex-wrap:wrap;max-width:55%}
+.mark-opt{
+  display:flex;align-items:center;gap:9px;width:100%;
+  height:32px;padding:0 10px;border-radius:6px;
+  font-size:12.5px;text-align:left;color:var(--text);
+}
+.mark-opt > i:first-child{width:14px;text-align:center}
+.mark-opt:hover{background:var(--paper)}
+.mark-opt.active{background:var(--primary-soft)}
+.mark-ok{margin-left:auto;color:var(--primary);font-size:11px}
+.mark-none{color:var(--text-sub);border-top:1px solid var(--line);border-radius:0 0 6px 6px;margin-top:3px}
+/* タグはチップ＋入力欄。チップの × で外す */
+.tag-editor{
+  position:relative;flex:1;min-width:0;
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px;cursor:text;
+}
+.tag-chips{display:contents}
+.tag-chip{gap:3px;height:24px;padding:0 3px 0 10px;font-size:11.5px;cursor:default}
+.tag-x{
+  width:17px;height:17px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:8.5px;color:inherit;opacity:.55;
+}
+.tag-x:hover{opacity:1;background:rgba(0,0,0,.08)}
+#tagEntry{flex:1;min-width:84px;height:26px;border:none;outline:none;background:none;font-size:12.5px}
+#tagEntry::placeholder{color:#B9B4A3}
+.foot-dates{font-size:11px;color:var(--text-sub);white-space:nowrap}
 
 .toolbar{
   display:flex;align-items:center;flex-wrap:wrap;gap:6px 6px;
@@ -1608,7 +1627,7 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
    ============================================================ */
 .tags-suggest {
   position: absolute;
-  top: 100%; left: 24px;
+  top: 100%; left: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-s);

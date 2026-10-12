@@ -11,7 +11,7 @@ function collectFields() {
   const body = serializeBody();
   return {
     title: refs.titleInput.value.trim(),
-    tags : parseTags(refs.tagsInput.value),
+    tags : parseTags(pendingTagsValue()),
     body,
     /* 検索用のテキストを保存時に作っておく。検索のたびに全メモの本文から
        マーカーを取り除き直さずに済む（list.js の絞り込みが使う） */
@@ -19,16 +19,28 @@ function collectFields() {
     mark : state.currentMark,
   };
 }
-/* 編集中メモの目印ピッカー。同じ目印をもう一度押すと外れる（トグル） */
+/* 編集中メモの目印。ボタン1つで今の目印を示し、押すと一覧から選べる（項目D の決定案）。
+   同じ目印をもう一度選ぶと外れる（トグル） */
 function renderMarkPicker() {
-  const cur = state.currentMark;
+  const mk = markById(state.currentMark);
   refs.markPicker.innerHTML =
-    `<span class="mark-picker-label"><i class="fa-regular fa-note-sticky"></i> 目印</span>` +
-    MEMO_MARKS.map(mk =>
-      `<button class="mark-btn ${cur === mk.id ? 'active' : ''}" data-mark="${mk.id}"
-         title="${esc(mk.label)}${cur === mk.id ? '（クリックで外す）' : 'の目印を付ける'}">
-         <i class="fa-solid ${mk.icon} mk-${mk.id}"></i></button>`).join('') +
-    (cur ? `<button class="mark-clear" title="目印を外す"><i class="fa-solid fa-xmark"></i></button>` : '');
+    `<button class="mark-main${mk ? ' on' : ''}"${mk ? ` data-mark="${mk.id}"` : ''} aria-haspopup="true" aria-expanded="false"
+       title="${mk ? `目印「${esc(mk.label)}」（クリックで変更）` : 'このメモに目印を付ける'}">` +
+      (mk ? `<i class="fa-solid ${mk.icon} mk-${mk.id}"></i>${esc(mk.label)}` : '<i class="fa-regular fa-bookmark"></i>目印') +
+      `<i class="fa-solid fa-chevron-down mark-cv"></i></button>` +
+    `<div class="mark-menu" hidden>` +
+      MEMO_MARKS.map(m => `<button class="mark-opt${m.id === state.currentMark ? ' active' : ''}" data-mark="${m.id}">
+         <i class="fa-solid ${m.icon} mk-${m.id}"></i>${esc(m.label)}${m.id === state.currentMark ? '<i class="fa-solid fa-check mark-ok"></i>' : ''}</button>`).join('') +
+      (mk ? `<button class="mark-opt mark-none" data-mark="${mk.id}"><i class="fa-solid fa-xmark"></i>目印を外す</button>` : '') +
+    `</div>`;
+}
+function setMarkMenuOpen(open) {
+  const menu = refs.markPicker.querySelector('.mark-menu');
+  const btn = refs.markPicker.querySelector('.mark-main');
+  if (!menu || !btn) return;
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  btn.classList.toggle('open', open);
 }
 function setCurrentMark(markId) {
   const next = state.currentMark === markId ? null : markId;
@@ -71,16 +83,42 @@ function renderSaveState() {
     el.innerHTML = '<i class="fa-regular fa-circle"></i>未保存（新規）';
   }
 }
+/* 作成・更新日時はフッターの保存状態の隣に短く出し、正確な日時はマウスを乗せると見られる */
 function renderStamps() {
   const m = state.memos.find(x => x.id === state.currentId);
-  refs.stampCreated.textContent = m ? fmtDateTime(m.createdAt) : '—';
-  refs.stampUpdated.textContent = m ? fmtDateTime(m.updatedAt) : '—';
+  refs.stampCreated.textContent = m ? fmtListDate(m.createdAt) : '—';
+  refs.stampUpdated.textContent = m ? fmtListDate(m.updatedAt) : '—';
+  refs.footDates.hidden = !m;
+  refs.footDates.title = m ? `作成 ${fmtDateTime(m.createdAt)} ／ 更新 ${fmtDateTime(m.updatedAt)}` : '';
 }
 function renderCharCount() {
   refs.charCount.textContent = bodyPlainText().length;
 }
+/* タグはチップで並べ、× で外せるようにする。確定したタグは隠し入力 tagsInput に
+   「a, b」の形で持ち、保存・下書き・フォーマット適用などの既存処理はそのまま読む */
 function renderTagsPreview() {
-  refs.tagsPreview.innerHTML = parseTags(refs.tagsInput.value).map(t => tagChip(t)).join('');
+  const tags = parseTags(refs.tagsInput.value);
+  refs.tagsPreview.innerHTML = tags.map(t =>
+    `<span class="chip ${tagClass(t)} tag-chip">${esc(t)}<button class="tag-x" data-tag="${esc(t)}" title="タグ「${esc(t)}」を外す"><i class="fa-solid fa-xmark"></i></button></span>`).join('');
+  refs.tagEntry.placeholder = tags.length ? '＋タグ' : '＋タグを追加';
+}
+/* 入力欄に打ちかけのタグも含めた値（Enter を押さずに保存しても失わない） */
+const pendingTagsValue = () => [refs.tagsInput.value, refs.tagEntry.value].filter(v => v && v.trim()).join(', ');
+function setTags(list) {
+  refs.tagsInput.value = list.join(', ');
+  renderTagsPreview();
+  markDirty();
+}
+/* 入力欄の文字をタグとして確定する。確定したら true */
+function commitTagEntry() {
+  const add = parseTags(refs.tagEntry.value);
+  refs.tagEntry.value = '';
+  if (add.length === 0) return false;
+  setTags([...new Set([...parseTags(refs.tagsInput.value), ...add])]);
+  return true;
+}
+function removeTag(name) {
+  setTags(parseTags(refs.tagsInput.value).filter(t => t !== name));
 }
 /* 編集画面のヘッダまわり（日時・保存状態・タグ・目印）をまとめて描き直す */
 function renderEditorMeta() {
@@ -110,6 +148,7 @@ async function openMemo(id) {
   state.currentMark = markById(m.mark) ? m.mark : null;
   refs.titleInput.value = m.title || '';
   refs.tagsInput.value  = (m.tags || []).join(', ');
+  refs.tagEntry.value   = '';
   showSheet();
   renderEditorMeta(); renderList();
   await loadImages();
@@ -129,6 +168,7 @@ function newMemo() {
   state.currentMark = null;
   refs.titleInput.value = '';
   refs.tagsInput.value = '';
+  refs.tagEntry.value = '';
   refs.bodyInput.innerHTML = '';
   rebuildLineMarks();
   showSheet();

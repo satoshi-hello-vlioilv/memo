@@ -127,11 +127,19 @@ function bindEvents() {
     if (!chip) return;
     toggleMarkChip(chip.dataset.mark);
   });
+  /* 目印：ボタンで一覧を開き、選んだら閉じる。外側のクリックと Esc でも閉じる */
   refs.markPicker.addEventListener('click', e => {
-    if (e.target.closest('.mark-clear')) { setCurrentMark(null); return; }
-    const btn = e.target.closest('.mark-btn');
-    if (btn) setCurrentMark(btn.dataset.mark);
+    e.stopPropagation();
+    if (e.target.closest('.mark-main')) {
+      const menu = refs.markPicker.querySelector('.mark-menu');
+      setMarkMenuOpen(!!menu && menu.hidden);
+      return;
+    }
+    const opt = e.target.closest('.mark-opt');
+    if (opt) { setMarkMenuOpen(false); setCurrentMark(opt.dataset.mark); }
   });
+  document.addEventListener('click', () => setMarkMenuOpen(false));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') setMarkMenuOpen(false); });
 
   /* --- 一覧 → グループ折りたたみ／メモを開く --- */
   refs.memoList.addEventListener('click', async e => {
@@ -207,21 +215,49 @@ function bindEvents() {
 
   /* --- 編集（変更検知）・タグサジェスト --- */
   refs.titleInput.addEventListener('input', markDirty);
-  refs.tagsInput.addEventListener('input', () => { markDirty(); renderTagsPreview(); updateTagSuggest(); });
-  refs.tagsInput.addEventListener('keydown', e => { if (e.key === 'Escape') refs.tagsSuggest.hidden = true; });
+  /* タグの入力：区切り文字（カンマ・読点・空白）か Enter で確定してチップにする。
+     日本語入力の変換中（isComposing）は確定しない */
+  refs.tagEntry.addEventListener('input', e => {
+    if (!e.isComposing && /[,、\s　]/.test(refs.tagEntry.value)) {
+      const parts = refs.tagEntry.value.split(/[,、\s　]+/);
+      const rest = parts.pop();
+      refs.tagEntry.value = parts.join(',');
+      commitTagEntry();
+      refs.tagEntry.value = rest;
+    }
+    markDirty();
+    updateTagSuggest();
+  });
+  refs.tagEntry.addEventListener('keydown', e => {
+    if (e.isComposing) return;
+    if (e.key === 'Escape') { refs.tagsSuggest.hidden = true; return; }
+    if (e.key === 'Enter') { e.preventDefault(); commitTagEntry(); refs.tagsSuggest.hidden = true; return; }
+    if (e.key === 'Backspace' && refs.tagEntry.value === '') {
+      const tags = parseTags(refs.tagsInput.value);
+      if (tags.length > 0) { e.preventDefault(); removeTag(tags[tags.length - 1]); }
+    }
+  });
+  /* 入力欄から離れたら打ちかけの文字もタグにする。候補の選択中は離れないよう、
+     候補の mousedown ではフォーカスを動かさない */
+  refs.tagEntry.addEventListener('blur', () => { commitTagEntry(); });
+  refs.tagsSuggest.addEventListener('mousedown', e => e.preventDefault());
   refs.tagsSuggest.addEventListener('click', e => {
     const item = e.target.closest('.sg-item');
     if (!item) return;
-    const parts = refs.tagsInput.value.split(/[,、]\s*/);
-    parts.pop();
-    parts.push(item.dataset.tag);
-    refs.tagsInput.value = parts.join(', ') + (parts.length > 0 ? ', ' : '');
+    refs.tagEntry.value = '';
+    setTags([...new Set([...parseTags(refs.tagsInput.value), item.dataset.tag])]);
     refs.tagsSuggest.hidden = true;
-    markDirty(); renderTagsPreview(); refs.tagsInput.focus();
+    refs.tagEntry.focus();
   });
+  refs.tagsPreview.addEventListener('click', e => {
+    const x = e.target.closest('.tag-x');
+    if (x) removeTag(x.dataset.tag);
+  });
+  /* チップの間の余白を押しても入力欄へ */
+  refs.tagEditor.addEventListener('click', e => { if (e.target === refs.tagEditor || e.target === refs.tagsPreview) refs.tagEntry.focus(); });
   const searchBoxEl = refs.searchInput.closest('.search-box');
   document.addEventListener('click', e => {
-    if (!refs.tagsSuggest.contains(e.target) && e.target !== refs.tagsInput) {
+    if (!refs.tagsSuggest.contains(e.target) && e.target !== refs.tagEntry) {
       refs.tagsSuggest.hidden = true;
     }
     /* searchClear など .search-box 内のクリックでは閉じない

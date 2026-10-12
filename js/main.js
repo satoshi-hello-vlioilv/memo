@@ -592,11 +592,6 @@ function bindEvents() {
     if (e.target.closest('.t-insert')) { insertImageRef(id); return; }
     lbShow(Number(fig.dataset.index));
   });
-  refs.thumbSize.addEventListener('input', () => {
-    state.thumbSize = Number(refs.thumbSize.value);
-    applyThumbSize();
-    savePrefDebounced('thumbSize', state.thumbSize);
-  });
 
   /* --- 添付ファイル --- */
   refs.btnAddAttach.addEventListener('click', () => refs.attachInput.click());
@@ -813,8 +808,6 @@ async function init() {
     return;
   }
   const prefs = await loadPrefs();
-  refs.thumbSize.value = state.thumbSize;
-  applyThumbSize();
   applyImgPanelWidth();
   applyPanelState();
   setupResponsivePanel();

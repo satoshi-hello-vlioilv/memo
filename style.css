@@ -966,16 +966,6 @@ button:disabled{cursor:not-allowed;opacity:.45}
 }
 
 /* サムネイルの「本文に挿入」ボタン */
-.t-insert{
-  display:none;width:100%;justify-content:center;align-items:center;gap:5px;
-  font-size:11px;font-weight:600;
-  height:26px;border-radius:6px;
-  background:var(--primary-soft);color:var(--primary-deep);
-  border:1px solid var(--primary-line);
-  transition:background-color .12s;
-  margin-top:2px;
-}
-.t-insert:hover{background:#D2E7E1}
 
 .body-wrap{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
 .interim-bar{
@@ -1077,9 +1067,11 @@ body.resizing-imgpanel *{user-select:none}
 body.resizing-imgpanel #app{transition:none}
 body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
 .imgpanel-head{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:13px 14px 10px 18px;
+  display:flex;align-items:center;gap:4px;
+  padding:10px 10px 10px 16px;
+  border-bottom:1px solid var(--line);
 }
+.imgpanel-head .panel-title{flex:1}
 .panel-title{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:700}
 .panel-title i{color:var(--primary)}
 .count-badge{
@@ -1088,47 +1080,30 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   background:var(--primary-soft);color:var(--primary-deep);
   font-size:11px;font-weight:600;
 }
-.imgpanel-tools{padding:0 14px 12px;border-bottom:1px solid var(--line)}
-.size-control{
-  display:flex;align-items:center;gap:10px;margin-top:11px;
-  color:var(--text-sub);font-size:11px;
-}
-.size-control input[type=range]{
-  flex:1;appearance:none;height:4px;border-radius:2px;
-  background:var(--paper-deep);outline:none;cursor:pointer;
-}
-.size-control input[type=range]::-webkit-slider-thumb{
-  appearance:none;width:15px;height:15px;border-radius:50%;
-  background:var(--primary);border:2.5px solid #fff;
-  box-shadow:0 1px 3px rgba(0,0,0,.3);
-}
+/* 画像は1列で大きく（大きさはパネルの幅で決まる） */
 .thumb-grid{
-  --thumb:160px;
   flex:1;overflow-y:auto;min-height:0;
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(var(--thumb),1fr));
-  gap:12px;align-content:start;
-  padding:14px 14px 100px;
+  display:grid;grid-template-columns:1fr;
+  gap:14px;align-content:start;
+  padding:14px;
 }
 .thumb{display:flex;flex-direction:column;gap:5px}
 .thumb-frame{
-  position:relative;aspect-ratio:4/3;border-radius:8px;overflow:hidden;
+  position:relative;border-radius:8px;overflow:hidden;
   border:1px solid var(--line);background:var(--paper-deep);
   cursor:zoom-in;
 }
-.thumb-frame img{width:100%;height:100%;object-fit:contain;display:block}
+.thumb-frame img{width:100%;height:auto;max-height:70vh;object-fit:contain;display:block}
+/* 操作（本文に挿入・拡大・削除）は右上に常に小さく出す */
 .thumb-acts{
-  position:absolute;inset:0;
-  display:flex;align-items:center;justify-content:center;gap:10px;
-  background:rgba(14,26,33,.45);
-  opacity:0;transition:opacity .15s;
+  position:absolute;top:6px;right:6px;
+  display:flex;gap:4px;
 }
-.thumb-frame:hover .thumb-acts{opacity:1}
-.thumb:hover .t-insert{display:flex}
 .t-act{
-  width:34px;height:34px;border-radius:8px;
+  width:28px;height:28px;border-radius:7px;
   display:inline-flex;align-items:center;justify-content:center;
-  background:rgba(255,255,255,.92);color:var(--text);font-size:13px;
+  background:rgba(255,255,255,.94);color:var(--text);font-size:11.5px;
+  box-shadow:0 1px 3px rgba(0,0,0,.25);
   transition:background-color .12s,color .12s;
 }
 .t-act:hover{background:#fff}
@@ -1157,7 +1132,7 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
 .attach-head .panel-title{flex:1}
 .attach-list{
   list-style:none;flex-shrink:0;
-  max-height:38%;overflow-y:auto;
+  max-height:30%;overflow-y:auto;
   padding:0 10px 8px;
 }
 .attach-list:empty{display:none}
@@ -1601,6 +1576,18 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
 /* ============================================================
    レスポンシブ対応
    ============================================================ */
+/* 1150px 以下では画像パネルを本文の上に重ねる引き出しにする。
+   列として並べると本文の幅が 360px ほどまで潰れてしまうため（項目F の決定案） */
+@media (max-width: 1150px) and (min-width: 769px) {
+  #app, #app.panel-closed { grid-template-columns: var(--sidebar-w) 1fr 0; }
+  #app.sidebar-closed, #app.sidebar-closed.panel-closed { grid-template-columns: 0 1fr 0; }
+  #app:not(.panel-closed) .imgpanel {
+    position: fixed; right: 0; top: var(--topbar-h); bottom: 0; z-index: 60;
+    width: min(360px, 90vw);
+    box-shadow: -12px 0 32px rgba(12,22,28,.25);
+  }
+  .imgpanel-resizer { display: none; }
+}
 @media (max-width: 900px) {
   :root {
     --sidebar-w: 260px;

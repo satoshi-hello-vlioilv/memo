@@ -347,6 +347,12 @@ function setupMobileTabs() {
 
 function setupResponsivePanel() {
   if (!NARROW_PANEL_MQ) return;
+  /* 狭い画面ではパネルを本文に重ねる引き出しとして出すので、Esc でも閉じられるようにする */
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !NARROW_PANEL_MQ.matches || !panelEffectivelyOpen() || isMobileLayout()) return;
+    if (!refs.lightbox.hidden || document.querySelector('.modal-backdrop:not([hidden])')) return;
+    togglePanel(false);
+  });
   syncPanelToWidth();
   const onChange = () => {
     /* 幅の帯をまたいだときは、自動制御の状態を作り直す */

@@ -201,7 +201,7 @@ const state = {
   query: '', imageOnly: false, fileOnly: false,
   searchScope: { title: true, tags: true, body: true },
   searchHistory: [],
-  thumbSize: 160, panelOpen: false, sidebarOpen: true,
+  panelOpen: false, sidebarOpen: true,
   mobileTab: 'list',   /* 幅768px以下のタブ表示（list/editor/files） */
   groupByDate: false, groupDateField: 'createdAt', expandedGroups: new Set(),
   sortDir: 'desc', sortKey: 'updatedAt',
@@ -235,7 +235,7 @@ function collectRefs() {
     'fmTags',
     'btnCopyText','btnDelete','btnSave','btnNew','btnManage',
     'imgPanel','imgPanelResizer','imgCount','btnPanelToggle','btnAddImage','fileInput',
-    'thumbSize','thumbGrid','imgEmpty','attachCount','btnAddAttach','attachInput','attachList','attachEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
+    'thumbGrid','imgEmpty','attachCount','btnAddAttach','attachInput','attachList','attachEmpty','dropOverlay','dropMainText','dropSubText','editorPane',
     'lightbox','lbName','lbIndex','lbZoom','lbZoomIn','lbZoomOut','lbFit','lbActual',
     'lbClose','lbStage','lbImg','lbPrev','lbNext',
     'manageModal','mgmtClose','mgmtNavFormats','mgmtNavTags','mgmtNavKeys','mgmtFormatCount','mgmtTagCount','mgmtSectionFormats','mgmtSectionTags','mgmtSectionKeys','keysBody',
@@ -367,7 +367,6 @@ async function loadPrefs() {
   try {
     const rows = await Store.getAll('prefs');
     const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
-    if (typeof map.thumbSize === 'number') state.thumbSize = map.thumbSize;
     /* 画像パネルは「必要なときに開く」既定へ変えたため、旧キー panelOpen
        （以前は既定で開いていた）は読まず、新しいキーで覚え直す */
     if (typeof map.mediaPanelOpen === 'boolean') state.panelOpen = map.mediaPanelOpen;

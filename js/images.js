@@ -43,14 +43,14 @@ function renderImages() {
     <figure class="thumb" data-id="${img.id}" data-index="${i}">
       <div class="thumb-frame" title="クリックで拡大表示">
         <img src="${urlOf(img)}" alt="${esc(img.name)}" loading="lazy">
+        <!-- 操作は常に小さく表示する（マウスを乗せないと見えない操作は気づかれない） -->
         <div class="thumb-acts">
-          <button class="t-act t-insert" title="本文に挿入"><i class="fa-solid fa-text-width"></i></button>
+          <button class="t-act t-insert" title="カーソル位置の本文に挿入"><i class="fa-solid fa-arrow-turn-down fa-rotate-90"></i></button>
           <button class="t-act t-view" title="拡大表示"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
           <button class="t-act t-del" title="この画像を削除"><i class="fa-regular fa-trash-can"></i></button>
         </div>
       </div>
       <figcaption class="thumb-name" title="${esc(img.name)}">${esc(img.name)}</figcaption>
-      <button class="t-insert" title="本文に挿入"><i class="fa-solid fa-text-width"></i> 本文に挿入</button>
     </figure>`).join('');
   renderMediaStrip();
 }
@@ -117,9 +117,6 @@ async function removeImage(id) {
   toast('画像を削除しました', 'success');
 }
 
-function applyThumbSize() {
-  refs.thumbGrid.style.setProperty('--thumb', state.thumbSize + 'px');
-}
 
 /* 画像パネルの幅はドラッグで自由に変更できる。ウィンドウ幅に対して
    サイドバー・本文編集領域が潰れないよう、適用のたびに範囲をクランプする。 */

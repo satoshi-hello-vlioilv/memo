@@ -302,18 +302,13 @@
   <!-- ======== 画像パネル ======== -->
   <aside class="imgpanel" id="imgPanel">
     <div class="imgpanel-resizer" id="imgPanelResizer" title="ドラッグして幅を調整"></div>
+    <!-- 見出しは1行（項目F の決定案）。画像は1列で大きく並べ、本文と見比べながら書けるようにする。
+         大きさはパネルの幅（左端のつまみ）で調整する -->
     <div class="imgpanel-head">
       <span class="panel-title"><i class="fa-regular fa-images"></i> 画像 <span id="imgCount" class="count-badge mono">0</span></span>
-      <button id="btnPanelToggle" class="icon-btn" title="画像パネルを閉じる"><i class="fa-solid fa-angles-right"></i></button>
-    </div>
-    <div class="imgpanel-tools">
-      <button id="btnAddImage" class="btn btn-soft btn-block"><i class="fa-solid fa-file-arrow-up"></i> 画像を追加</button>
+      <button id="btnAddImage" class="icon-btn" title="画像を追加"><i class="fa-solid fa-plus"></i></button>
       <input type="file" id="fileInput" accept="image/*" multiple="" hidden="">
-      <div class="size-control" title="サムネイルの表示サイズ">
-        <i class="fa-solid fa-magnifying-glass-minus"></i>
-        <input type="range" id="thumbSize" min="96" max="288" step="8" value="160">
-        <i class="fa-solid fa-magnifying-glass-plus"></i>
-      </div>
+      <button id="btnPanelToggle" class="icon-btn" title="パネルを閉じる（Esc）"><i class="fa-solid fa-angles-right"></i></button>
     </div>
     <div class="thumb-grid" id="thumbGrid"></div>
     <div class="img-empty" id="imgEmpty">

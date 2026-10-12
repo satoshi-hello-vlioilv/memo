@@ -20,7 +20,9 @@ function bindEvents() {
   refs.btnEmptyTrash.addEventListener('click', emptyTrash);
 
   /* --- 選択モード・一括操作 --- */
-  refs.btnSelectMode.addEventListener('click', toggleSelectMode);
+  /* 一覧の「⋯」メニュー。複数選択は押したら一覧の操作に移るので閉じる */
+  const listMore = bindPopover(refs.btnListMore, refs.listMore);
+  refs.btnSelectMode.addEventListener('click', () => { listMore.close(); toggleSelectMode(); });
   refs.btnBulkAll.addEventListener('click', () => toggleSelectAll(filteredMemos()));
   refs.btnBulkTag.addEventListener('click', bulkAddTags);
   refs.bulkMarkSelect.innerHTML = '<option value="">目印…</option>' +

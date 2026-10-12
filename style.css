@@ -192,8 +192,14 @@ button:disabled{cursor:not-allowed;opacity:.45}
   border:1px solid var(--ink-700);border-left:none;
 }
 .sidebar-open-tab:hover{background:var(--ink-800)}
+/* 検索欄と「絞り込み」ボタンを1行に並べる（項目B の決定案） */
+.search-row{
+  position:relative;
+  display:flex;align-items:center;gap:6px;
+  margin:12px 14px 10px;
+}
 .search-box{
-  margin:14px 14px 10px;
+  position:relative;flex:1;min-width:0;
   display:flex;align-items:center;gap:9px;
   background:var(--ink-850);
   border:1px solid var(--ink-700);
@@ -245,8 +251,54 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .search-suggest-item:hover .ssi-del{opacity:1}
 .search-suggest-item .ssi-del:hover{background:rgba(194,69,50,.7);color:#fff}
 
-.search-scope{display:flex;align-items:center;gap:8px;padding:0 14px 10px}
-.search-scope-label{font-size:10px;color:var(--inv-sub);font-weight:700;letter-spacing:.04em;flex-shrink:0}
+.filter-btn{
+  flex-shrink:0;display:inline-flex;align-items:center;gap:6px;
+  height:38px;padding:0 10px;border-radius:var(--radius-s);
+  border:1px solid var(--ink-700);background:var(--ink-850);
+  color:var(--inv-text);font-size:12px;white-space:nowrap;
+  transition:border-color .15s,background-color .15s;
+}
+.filter-btn i{font-size:11px;color:var(--inv-sub)}
+.filter-btn .filter-cv{font-size:8px}
+.filter-btn:hover,.filter-btn.open{border-color:var(--primary);background:var(--ink-800)}
+.filter-btn.has-filter{border-color:var(--primary)}
+.filter-btn.has-filter > i:first-child{color:#7FD0C3}
+.filter-badge{
+  min-width:17px;height:17px;padding:0 5px;border-radius:9px;
+  background:var(--primary);color:#fff;font-size:10px;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+/* 絞り込みパネル：目印・タグ・検索対象・画像/添付をまとめて開く */
+.filter-pop{
+  position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:95;
+  max-height:min(70vh, 520px);overflow-y:auto;
+  background:var(--ink-850);
+  border:1px solid var(--ink-700);border-radius:10px;
+  box-shadow:var(--shadow-2);
+  padding:12px;
+}
+.fp-sec{
+  font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--inv-sub);
+  margin:12px 2px 7px;
+}
+.fp-sec:first-child{margin-top:0}
+.filter-pop .markbar,.filter-pop .tagbar{padding:0;max-height:180px}
+.filter-pop .markbar:empty,.filter-pop .tagbar:empty{display:block}
+.filter-pop .markbar:empty::before,.filter-pop .tagbar:empty::before{
+  content:attr(data-empty);font-size:11px;color:var(--inv-sub);
+}
+.fp-flags{display:flex;flex-wrap:wrap;gap:6px}
+.fp-flag{
+  display:inline-flex;align-items:center;gap:6px;
+  height:28px;padding:0 11px;border-radius:14px;
+  border:1px solid var(--ink-700);background:var(--ink-900);
+  color:var(--inv-sub);font-size:11.5px;
+  transition:background-color .12s,color .12s,border-color .12s;
+}
+.fp-flag:hover{color:var(--inv-text);border-color:var(--primary)}
+.fp-flag.active{background:var(--primary);border-color:var(--primary);color:#fff}
+
+.search-scope{display:flex;align-items:center;gap:8px}
 .scope-group{
   display:flex;flex:1;min-width:0;
   border:1px solid var(--ink-700);border-radius:7px;
@@ -386,7 +438,31 @@ button:disabled{cursor:not-allowed;opacity:.45}
   letter-spacing:.04em;
   flex-shrink:0;
 }
+.list-meta > span{white-space:nowrap}
 .list-meta-right{display:flex;align-items:center;gap:6px}
+/* 一覧の「⋯」メニュー（複数選択・日付でまとめる） */
+.list-more-wrap{position:relative}
+.list-more{
+  position:absolute;right:0;top:calc(100% + 6px);z-index:95;
+  min-width:200px;padding:6px;
+  background:var(--ink-850);border:1px solid var(--ink-700);border-radius:9px;
+  box-shadow:var(--shadow-2);
+  display:flex;flex-direction:column;gap:2px;
+}
+.lm-item{
+  display:flex;align-items:center;gap:9px;width:100%;
+  height:34px;padding:0 10px;border-radius:6px;
+  color:var(--inv-text);font-size:12.5px;text-align:left;letter-spacing:0;
+}
+.lm-item i{width:14px;text-align:center;color:var(--inv-sub)}
+.lm-item:hover{background:var(--ink-800)}
+.lm-item.active{color:#7FD0C3}
+.lm-item.active i{color:#7FD0C3}
+.lm-sub{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:4px 10px 6px 33px;font-size:11.5px;color:var(--inv-sub);letter-spacing:0;
+}
+.list-meta .icon-btn.open{background:var(--ink-800);color:var(--inv-text)}
 .group-field-select{
   height:24px;padding:0 22px 0 8px;
   border:1px solid var(--ink-700);border-radius:5px;

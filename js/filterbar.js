@@ -174,6 +174,10 @@ function toggleMarkChip(id) {
 
 function renderFilterBar() {
   const conds = activeConditions();
+  /* 「絞り込み」ボタンにも効いている条件の数を出し、パネルを閉じていても分かるようにする */
+  refs.filterBadge.hidden = conds.length === 0;
+  refs.filterBadge.textContent = String(conds.length);
+  refs.btnFilter.classList.toggle('has-filter', conds.length > 0);
   refs.filterBar.innerHTML = conds.length === 0 ? '' :
     `<span class="cond-lead"><i class="fa-solid fa-filter"></i>絞り込み</span>` +
     conds.map((c, i) =>
@@ -185,6 +189,7 @@ function renderFilterBar() {
 }
 
 function bindFilterBar() {
+  bindPopover(refs.btnFilter, refs.filterPop);
   refs.filterBar.addEventListener('click', e => {
     if (e.target.closest('#condClearAll')) {
       state.imageOnly = false;

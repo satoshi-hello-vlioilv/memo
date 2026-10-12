@@ -71,6 +71,24 @@ function insertAtCaret(el, text, caretOffset = null) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/* ボタンで開閉する小さなパネル（絞り込み・一覧の表示メニューなど）の共通処理。
+   外側のクリックと Esc で閉じる。パネル内のクリックは外へ伝えない：
+   中のチップを押すと一覧が描き直されてクリック元の要素が DOM から外れ、
+   「外側のクリック」と誤判定されて閉じてしまうため */
+function bindPopover(btn, pop, { onToggle = null } = {}) {
+  const set = open => {
+    pop.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.classList.toggle('open', open);
+    if (onToggle) onToggle(open);
+  };
+  btn.addEventListener('click', e => { e.stopPropagation(); set(pop.hidden); });
+  pop.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => { if (!pop.hidden) set(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !pop.hidden) set(false); });
+  return { close: () => set(false), open: () => set(true) };
+}
+
 /* ============================================================
    IndexedDB ラッパー
    ============================================================ */
@@ -195,7 +213,7 @@ function collectRefs() {
   const ids = [
     'app','mobileTabs','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
     'sidebarTitle','btnTrash','trashBar','trashCount','btnEmptyTrash','btnExitTrash',
-    'searchInput','searchClear','searchScope','searchSuggest','filterBar','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
+    'searchInput','searchClear','searchScope','searchSuggest','btnFilter','filterPop','filterBadge','filterBar','btnListMore','listMore','groupFieldRow','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'bulkBar','bulkCount','btnBulkAll','bulkAllLabel','bulkNormalActs','bulkTrashActs','btnBulkTag','bulkMarkSelect','btnBulkExport','btnBulkTrash','btnBulkRestore','btnBulkPurge',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
     'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagsSuggest','tagsPreview','btnAddMedia','mediaStrip','mediaInput',

@@ -49,12 +49,38 @@
       <button id="btnTrash" class="icon-btn" title="ゴミ箱を開く"><i class="fa-solid fa-trash-can"></i></button>
       <button id="btnSidebarClose" class="icon-btn" title="サイドバーを閉じる"><i class="fa-solid fa-angles-left"></i></button>
     </div>
-    <div class="search-box" style="position:relative;">
-      <i class="fa-solid fa-magnifying-glass"></i>
-      <input id="searchInput" type="text" placeholder="検索（例: 定例 tag:業務 -済）" autocomplete="off"
-             title="空白区切りですべてを含む検索。tag: / mark: / is:image / date: / -除外 が使えます（Ctrl+F）">
-      <button id="searchClear" class="icon-btn" title="検索をクリア" hidden=""><i class="fa-solid fa-xmark"></i></button>
-      <div class="search-suggest" id="searchSuggest" hidden=""></div>
+    <!-- 検索欄と「絞り込み」ボタン。目印・タグ・検索対象・画像/添付の絞り込みは
+         ボタンから開くパネルにまとめ、一覧の表示領域を確保する（UI/UX 見直し 項目B） -->
+    <div class="search-row">
+      <div class="search-box">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input id="searchInput" type="text" placeholder="検索（例: 定例 -済）" autocomplete="off"
+               title="空白区切りですべてを含む検索。tag: / mark: / is:image / date: / -除外 が使えます">
+        <button id="searchClear" class="icon-btn" title="検索をクリア" hidden=""><i class="fa-solid fa-xmark"></i></button>
+        <div class="search-suggest" id="searchSuggest" hidden=""></div>
+      </div>
+      <button id="btnFilter" class="filter-btn" aria-haspopup="true" aria-expanded="false" title="検索対象・目印・タグ・画像/添付で絞り込む">
+        <i class="fa-solid fa-sliders"></i><span class="filter-btn-label">絞り込み</span><span class="filter-badge mono" id="filterBadge" hidden=""></span><i class="fa-solid fa-chevron-down filter-cv"></i>
+      </button>
+      <div class="filter-pop" id="filterPop" hidden="">
+        <div class="fp-sec">検索対象</div>
+        <div class="search-scope" id="searchScope">
+          <div class="scope-group">
+            <button class="scope-chip active" data-scope="title" title="タイトルを検索対象に含める（クリックで切替）"><i class="fa-solid fa-heading"></i> タイトル</button>
+            <button class="scope-chip active" data-scope="tags" title="タグを検索対象に含める（クリックで切替）"><i class="fa-solid fa-tag"></i> タグ</button>
+            <button class="scope-chip active" data-scope="body" title="本文を検索対象に含める（クリックで切替）"><i class="fa-solid fa-align-left"></i> 本文</button>
+          </div>
+        </div>
+        <div class="fp-sec">目印</div>
+        <div class="markbar" id="markBar" data-empty="目印の付いたメモはまだありません"></div>
+        <div class="fp-sec">タグ</div>
+        <div class="tagbar" id="tagBar" data-empty="タグはまだありません"></div>
+        <div class="fp-sec">その他</div>
+        <div class="fp-flags">
+          <button id="btnImageFilter" class="fp-flag" title="画像ありのメモのみ表示"><i class="fa-regular fa-image"></i> 画像あり</button>
+          <button id="btnFileFilter" class="fp-flag" title="添付ファイルありのメモのみ表示"><i class="fa-solid fa-paperclip"></i> 添付あり</button>
+        </div>
+      </div>
     </div>
     <div class="trash-bar" id="trashBar" hidden="">
       <i class="fa-solid fa-trash-can"></i>
@@ -62,34 +88,29 @@
       <button id="btnEmptyTrash" class="btn btn-danger-ghost">空にする</button>
       <button id="btnExitTrash" class="btn btn-soft">一覧へ戻る</button>
     </div>
-    <div class="search-scope" id="searchScope">
-      <span class="search-scope-label">検索対象</span>
-      <div class="scope-group">
-        <button class="scope-chip active" data-scope="title" title="タイトルを検索対象に含める（クリックで切替）"><i class="fa-solid fa-heading"></i> タイトル</button>
-        <button class="scope-chip active" data-scope="tags" title="タグを検索対象に含める（クリックで切替）"><i class="fa-solid fa-tag"></i> タグ</button>
-        <button class="scope-chip active" data-scope="body" title="本文を検索対象に含める（クリックで切替）"><i class="fa-solid fa-align-left"></i> 本文</button>
-      </div>
-    </div>
     <div class="filter-bar" id="filterBar"></div>
-    <div class="markbar" id="markBar"></div>
-    <div class="tagbar" id="tagBar"></div>
     <div class="list-meta">
       <span id="listCount" class="mono">0 件</span>
       <div class="list-meta-right">
-        <button id="btnSelectMode" class="icon-btn" title="複数のメモを選んでまとめて操作"><i class="fa-regular fa-square-check"></i></button>
-        <button id="btnImageFilter" class="icon-btn" title="画像ありのメモのみ表示"><i class="fa-regular fa-image"></i></button>
-        <button id="btnFileFilter" class="icon-btn" title="添付ファイルありのメモのみ表示"><i class="fa-solid fa-paperclip"></i></button>
-        <select id="groupFieldSelect" class="group-field-select" title="まとめる日付の種類" hidden="">
-          <option value="createdAt">作成日</option>
-          <option value="updatedAt">更新日</option>
-        </select>
-        <button id="btnGroupByDate" class="icon-btn" title="日付でグループ化"><i class="fa-solid fa-calendar-days"></i></button>
         <select id="sortKeySelect" class="group-field-select" title="並び替えの基準">
           <option value="updatedAt">更新日</option>
           <option value="createdAt">作成日</option>
           <option value="title">タイトル</option>
         </select>
         <button id="btnSortOrder" class="sort-btn" title="新しい順に表示中（クリックで古い順に切替）"><i class="fa-solid fa-arrow-down-wide-short"></i> 降順</button>
+        <div class="list-more-wrap">
+          <button id="btnListMore" class="icon-btn" title="表示の切り替え（複数選択・日付でまとめる）" aria-haspopup="true" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>
+          <div class="list-more" id="listMore" hidden="">
+            <button id="btnSelectMode" class="lm-item" title="複数のメモを選んでまとめて操作"><i class="fa-regular fa-square-check"></i> 複数選択</button>
+            <button id="btnGroupByDate" class="lm-item" title="日付でグループ化"><i class="fa-solid fa-calendar-days"></i> 日付でまとめる</button>
+            <label class="lm-sub" id="groupFieldRow" hidden="">まとめる日付
+              <select id="groupFieldSelect" class="group-field-select" title="まとめる日付の種類">
+                <option value="createdAt">作成日</option>
+                <option value="updatedAt">更新日</option>
+              </select>
+            </label>
+          </div>
+        </div>
       </div>
     </div>
     <div class="bulk-bar" id="bulkBar" hidden="">

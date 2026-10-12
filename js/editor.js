@@ -315,7 +315,7 @@ function applySidebarState() {
 function applyGroupByDateState() {
   refs.btnGroupByDate.classList.toggle('active', state.groupByDate);
   refs.btnGroupByDate.title = state.groupByDate ? 'グループ化を解除' : '日付でグループ化';
-  refs.groupFieldSelect.hidden = !state.groupByDate;
+  refs.groupFieldRow.hidden = !state.groupByDate;
   refs.groupFieldSelect.value = state.groupDateField;
 }
 function applyImageFilterState() {

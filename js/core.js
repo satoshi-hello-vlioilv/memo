@@ -6,7 +6,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.8.1';
 
 /* ============================================================
    ユーティリティ
@@ -221,8 +221,8 @@ const state = {
 const refs = {};
 function collectRefs() {
   const ids = [
-    'app','btnBack','btnBackLabel','btnAppMore','appMore','btnFmtToggle','brandVersion','btnToggleSidebar','btnSidebarClose','btnSidebarOpen','fileImport','btnImport','btnExport',
-    'sidebarTitle','btnTrash','trashBar','trashCount','btnEmptyTrash','btnExitTrash',
+    'app','btnBack','btnBackLabel','btnAppMore','appMore','btnFmtToggle','brandVersion','btnToggleSidebar','btnSidebarOpen','fileImport','btnImport','btnExport',
+    'btnTrash','trashBar','trashCount','btnEmptyTrash','btnExitTrash',
     'searchInput','searchClear','searchScope','searchSuggest','btnFilter','filterPop','filterBadge','filterBar','btnListMore','listMore','groupFieldRow','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'bulkBar','bulkCount','btnBulkAll','bulkAllLabel','bulkNormalActs','bulkTrashActs','btnBulkTag','bulkMarkSelect','btnBulkExport','btnBulkTrash','btnBulkRestore','btnBulkPurge',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',

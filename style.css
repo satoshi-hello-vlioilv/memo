@@ -170,19 +170,22 @@ button:disabled{cursor:not-allowed;opacity:.45}
   overflow:hidden;
   min-width:0;
 }
-.sidebar-head{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:10px 12px 10px 16px;
-  border-bottom:1px solid var(--ink-line);
-  flex-shrink:0;
+/* 一覧の最下部のゴミ箱（フォルダの見立て）。件数は1件以上のときだけ出す */
+.trash-link{
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
+  height:36px;padding:0 16px;
+  border-top:1px solid var(--ink-line);
+  color:var(--inv-sub);font-size:12px;text-align:left;
+  transition:background-color .12s,color .12s;
 }
-.sidebar-title{
-  font-size:11px;font-weight:700;letter-spacing:.06em;
-  text-transform:uppercase;color:var(--inv-sub);
-  display:flex;align-items:center;gap:7px;
+.trash-link:hover{background:var(--ink-850);color:var(--inv-text)}
+.trash-link i{width:14px;text-align:center;font-size:11.5px}
+.trash-link.active{color:var(--inv-text)}
+.trash-n{
+  margin-left:auto;min-width:20px;height:18px;padding:0 6px;border-radius:9px;
+  background:var(--ink-800);font-size:10.5px;
+  display:inline-flex;align-items:center;justify-content:center;
 }
-.sidebar-head .icon-btn{color:var(--inv-sub)}
-.sidebar-head .icon-btn:hover{background:var(--ink-800);color:var(--inv-text)}
 .sidebar-open-tab{
   position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:30;
   width:34px;height:78px;border-radius:0 10px 10px 0;
@@ -589,7 +592,10 @@ button:disabled{cursor:not-allowed;opacity:.45}
   transition:background-color .12s,color .12s;
 }
 .group-rest:hover{background:var(--ink-850);color:var(--inv-text)}
+/* 一覧が空のときは高さを取らせず、案内を一覧の上部に出す */
+.memo-list:empty{flex:0 0 auto;padding:0}
 .list-empty{
+  margin-bottom:auto;
   padding:36px 24px;text-align:center;color:var(--inv-sub);font-size:12.5px;line-height:1.9;
 }
 .list-empty i{font-size:26px;display:block;margin-bottom:10px;opacity:.5}
@@ -674,8 +680,10 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .title-input:focus{border-bottom-color:var(--primary-line)}
 .title-input::placeholder{color:#B9B4A3;font-weight:600}
 /* 目印ボタン・タグ・画像の追加を1行に（項目D の決定案） */
-.meta-row{display:flex;align-items:center;gap:10px;margin:2px 0 12px;min-width:0}
-.meta-sep{width:1px;height:18px;background:var(--line);flex-shrink:0}
+/* タグが折り返しても目印ボタンや追加ボタンが縦にずれないよう上端でそろえる（項目H の決定案） */
+.meta-row{display:flex;align-items:flex-start;gap:10px;margin:2px 0 12px;min-width:0}
+.meta-row > .mark-wrap,.meta-row > #btnAddMedia{margin-top:2px}
+.meta-sep{width:1px;height:18px;background:var(--line);flex-shrink:0;margin-top:7px}
 .mark-wrap{position:relative;flex-shrink:0}
 .mark-main{
   display:inline-flex;align-items:center;gap:6px;
@@ -727,7 +735,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
   font-size:8.5px;color:inherit;opacity:.55;
 }
 .tag-x:hover{opacity:1;background:rgba(0,0,0,.08)}
-#tagEntry{flex:1;min-width:84px;height:26px;border:none;outline:none;background:none;font-size:12.5px}
+#tagEntry{flex:1 1 64px;min-width:64px;height:26px;border:none;outline:none;background:none;font-size:12.5px}
 #tagEntry::placeholder{color:#B9B4A3}
 .foot-dates{font-size:11px;color:var(--text-sub);white-space:nowrap}
 
@@ -1633,8 +1641,8 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   #app[data-mtab="list"]   .sidebar  { display: flex; }
   #app[data-mtab="editor"] .editor   { display: flex; overflow: hidden; }
   #app[data-mtab="files"]  .imgpanel { display: flex; }
-  /* 一覧の見出し行（サイドバーの開閉・ゴミ箱）は使わない。ゴミ箱はヘッダーの「⋮」から */
-  .sidebar-head { display: none; }
+  /* 一覧の最下部のゴミ箱は出さない。ゴミ箱はヘッダーの「⋮」から */
+  .trash-link { display: none; }
   #app.sidebar-closed .sidebar { pointer-events: auto; }
   .sidebar-open-tab, .imgpanel-resizer, #btnPanelToggle { display: none !important; }
 
@@ -1644,6 +1652,10 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   /* ツールバー：1段目は取り消し・段落・Aa・保存・⋯。文字の書式は「Aa」で2段目に開く */
   .toolbar { padding: 6px 10px; flex-wrap: wrap; row-gap: 0; }
   .fmt-toggle { display: inline-flex; }
+  /* 追加ボタンは「📎 追加」に縮め、タグの入力欄が1行に収まる幅を残す */
+  #btnAddMedia { font-size: 0; gap: 0; padding: 0 9px; }
+  #btnAddMedia i { font-size: 11px; }
+  #btnAddMedia::after { content: '追加'; font-size: 11px; margin-left: 5px; }
   .fmt-group { display: none; order: 9; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto;
                margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
   .fmt-group > .tool-sep:first-child { display: none; }
@@ -1702,7 +1714,6 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
 .trash-bar > span{flex:1 1 140px;min-width:0}
 .trash-bar > span .mono{white-space:nowrap}
 .trash-bar .btn{height:24px;padding:0 9px;font-size:11px}
-.sidebar-head .icon-btn.active{color:#F09A86;background:rgba(194,69,50,.2)}
 #app.trash-view .memo-item{cursor:default}
 
 /* --- 一括操作バー --- */

@@ -48,11 +48,6 @@
 
   <!-- ======== サイドバー：検索・一覧 ======== -->
   <aside class="sidebar">
-    <div class="sidebar-head">
-      <span class="sidebar-title" id="sidebarTitle"><i class="fa-solid fa-clock-rotate-left"></i> メモ一覧</span>
-      <button id="btnTrash" class="icon-btn" title="ゴミ箱を開く"><i class="fa-solid fa-trash-can"></i></button>
-      <button id="btnSidebarClose" class="icon-btn" title="サイドバーを閉じる"><i class="fa-solid fa-angles-left"></i></button>
-    </div>
     <!-- 検索欄と「絞り込み」ボタン。目印・タグ・検索対象・画像/添付の絞り込みは
          ボタンから開くパネルにまとめ、一覧の表示領域を確保する（UI/UX 見直し 項目B） -->
     <div class="search-row">
@@ -138,6 +133,9 @@
       <i class="fa-regular fa-folder-open"></i>
       <span id="listEmptyMsg">メモはまだありません。<br>「新規メモ」から作成できます。</span>
     </div>
+    <!-- ゴミ箱はメールアプリのフォルダのように一覧の最下部に置く。ゴミ箱を表示中は
+         「メモ一覧に戻る」に変わる（項目S の決定案。幅 768px 以下はヘッダーの「⋮」から） -->
+    <button id="btnTrash" class="trash-link" title="ゴミ箱を開く"></button>
   </aside>
   <button id="btnSidebarOpen" class="sidebar-open-tab" title="サイドバーを開く" hidden=""><i class="fa-solid fa-angles-right"></i></button>
 
@@ -323,7 +321,7 @@
     </div>
 
     <div class="attach-head">
-      <span class="panel-title"><i class="fa-regular fa-paperclip"></i> 添付ファイル <span id="attachCount" class="count-badge mono">0</span></span>
+      <span class="panel-title"><i class="fa-solid fa-paperclip"></i> 添付ファイル <span id="attachCount" class="count-badge mono">0</span></span>
       <button id="btnAddAttach" class="icon-btn" title="ファイルを添付"><i class="fa-solid fa-plus"></i></button>
       <input type="file" id="attachInput" multiple="" hidden="">
     </div>

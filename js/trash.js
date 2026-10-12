@@ -10,16 +10,17 @@
 const TRASH_KEEP_DAYS = 30;
 
 function applyTrashViewState() {
+  const n = trashedMemos().length;
   refs.btnTrash.classList.toggle('active', state.trashView);
-  refs.btnTrash.title = state.trashView ? 'メモ一覧に戻る' : `ゴミ箱を開く（${trashedMemos().length} 件）`;
+  refs.btnTrash.title = state.trashView ? 'メモ一覧に戻る' : `ゴミ箱を開く（${n} 件）`;
+  refs.btnTrash.innerHTML = state.trashView
+    ? '<i class="fa-solid fa-arrow-left"></i>メモ一覧に戻る'
+    : `<i class="fa-solid fa-trash-can"></i>ゴミ箱${n > 0 ? `<span class="trash-n mono">${n}</span>` : ''}`;
   refs.app.classList.toggle('trash-view', state.trashView);
   refs.trashBar.hidden = !state.trashView;
   if (state.trashView) {
     refs.trashCount.textContent = `${trashedMemos().length} 件`;
   }
-  refs.sidebarTitle.innerHTML = state.trashView
-    ? '<i class="fa-solid fa-trash-can"></i> ゴミ箱'
-    : '<i class="fa-solid fa-clock-rotate-left"></i> メモ一覧';
 }
 function toggleTrashView(on = !state.trashView) {
   state.trashView = on;

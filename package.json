@@ -1,6 +1,6 @@
 {
   "name": "memo-studio",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "ブラウザだけで動作するメモ／フィールドノートアプリ（依存ライブラリなし）",
   "private": true,
   "scripts": {

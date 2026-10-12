@@ -25,6 +25,7 @@ for (const v of variants) {
     const { w, h } = sh;
     const key = sh.key || String(w);
     const page = await openApp(b, { width: w, height: h, ...(item.open || {}), ...(sh.open || {}) });
+    if (item.before) await item.before(page, { width: w, height: h, shot: sh });   /* 案を差し込む前の状態づくり */
     await applyVariant(page, v);
     if (item.scene) await item.scene(page, { width: w, height: h, variant: v, shot: sh });
     if (v.scene) await v.scene(page, { width: w, height: h, shot: sh });

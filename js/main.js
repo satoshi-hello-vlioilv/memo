@@ -648,7 +648,6 @@ function bindEvents() {
     else togglePanel(false);
   });
   bindMediaStrip();
-  refs.btnSidebarClose.addEventListener('click', toggleSidebar);
   refs.btnSidebarOpen.addEventListener('click', toggleSidebar);
 
   refs.btnGroupByDate.addEventListener('click', () => {

@@ -36,7 +36,7 @@ node tools/uiux/regression.mjs
 | `run.mjs` | 項目ファイルの案を順にキャプチャし、比較画像と計測値を書き出す |
 | `regression.mjs` | 初回起動・検索/絞り込み・書式・目印/タグ・画像/添付・管理・書き出し・ゴミ箱・複数選択・下書き・10 種の画面幅を通しで確認 |
 | `serve.cjs` | 確認用の静的サーバー |
-| `items/A.mjs`〜`G.mjs` | 2026-10 の見直しで評価した各項目の案（その時点の画面に差し込む前提の試作。記録として残している） |
+| `items/A.mjs`〜`G.mjs`・`H.mjs`・`S.mjs` | 2026-10 の見直し（A〜G）と v1.8.1 の不具合修正（H・S）で評価した各項目の案（その時点の画面に差し込む前提の試作。記録として残している） |
 
 ### 項目ファイルの書き方
 
@@ -44,7 +44,8 @@ node tools/uiux/regression.mjs
 export default {
   key: 'X',                       // 出力フォルダ名
   shots: [{ w: 1440, h: 900, key: '1440' }, { w: 390, h: 844, key: '390' }],
-  scene: async (page, { shot }) => {},   // 撮影前に全案共通で行う操作（任意）
+  before: async (page, { shot }) => {},  // 案を差し込む前の状態づくり（任意。例：ゴミ箱に1件入れる）
+  scene: async (page, { shot }) => {},   // 案を差し込んだ後、撮影前に全案共通で行う操作（任意）
   rounds: {
     r1: [{ id: 'X1', name: '案の名前', css: '...', js: '(() => { ... })()', scene: async page => {} }],
   },

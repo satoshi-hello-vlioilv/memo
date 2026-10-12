@@ -196,9 +196,11 @@
             <option value="li">箇条書き</option>
             <option value="task">チェックリスト</option>
           </select>
+          <span class="tool-sep"></span>
           <button id="btnBold" class="icon-btn" title="太字（Ctrl+B）"><i class="fa-solid fa-bold"></i></button>
           <button id="btnItalic" class="icon-btn" title="斜体（Ctrl+I）"><i class="fa-solid fa-italic"></i></button>
           <button id="btnLink" class="icon-btn" title="リンクを挿入・編集（Ctrl+K）"><i class="fa-solid fa-link"></i></button>
+          <span class="tool-sep"></span>
           <select id="fontSizeSelect" class="fmt-select fmt-select--sm" title="文字サイズ">
             <option value="">サイズ</option>
             <option value="reset">サイズ解除</option>
@@ -213,12 +215,16 @@
             <input type="color" id="textColorInput" value="#243038">
             <button type="button" class="color-reset" id="btnClearTextColor" title="文字色を解除"><i class="fa-solid fa-xmark"></i></button>
           </span>
+          <span class="tool-sep"></span>
           <button id="btnClearFormat" class="icon-btn" title="標準の書式に戻す（黒・標準サイズ・太さ普通）"><i class="fa-solid fa-text-slash"></i></button>
         </div>
         <div class="tool-group toolbar-end">
           <span id="recIndicator" class="rec-indicator" hidden="">
             <span class="rec-dot"></span>REC <span id="recTime" class="mono">0:00</span>
           </span>
+          <!-- 保存ボタンは保存状態も兼ねる（項目E の決定案）。保存済みは控えめな「✓ 保存済み」、
+               未保存の変更があると強調した「● 保存」に変わる -->
+          <button id="btnSave" class="save-btn" title="保存（Ctrl+S）"><span id="saveState" class="save-state fresh"></span></button>
           <!-- 使用頻度の低い操作はここへ格納し、ツールバーを1段に保つ -->
           <div class="tool-more-wrap">
             <button id="btnToolMore" class="icon-btn" title="その他の操作" aria-haspopup="true" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>
@@ -255,6 +261,13 @@
               <div class="tool-more-sep"></div>
               <button id="btnMic" class="tool-more-item" title="本文へ音声で直接入力します"><i class="fa-solid fa-microphone"></i> 音声入力</button>
               <button id="btnShowMarks" class="tool-more-item" title="改行マークの表示切替"><i class="fa-solid fa-paragraph"></i> 改行マークの表示</button>
+              <div class="tool-more-sep"></div>
+              <button id="btnCopyText" class="tool-more-item" title="テキストをクリップボードにコピー"><i class="fa-regular fa-copy"></i> テキストをコピー</button>
+              <button id="btnDelete" class="tool-more-item tool-more-danger" title="このメモをゴミ箱へ移す"><i class="fa-regular fa-trash-can"></i> このメモを削除</button>
+              <div class="tool-more-info">
+                <span><span id="charCount" class="mono">0</span> 文字</span>
+                <span class="foot-dates mono" id="footDates">作成 <span id="stampCreated">—</span>・更新 <span id="stampUpdated">—</span></span>
+              </div>
             </div>
           </div>
         </div>
@@ -283,20 +296,6 @@
              data-placeholder="ここに本文を入力します。&#10;画像パネルの「本文に挿入」で画像をインラインに配置できます。"></div>
       </div>
 
-      <div class="sheet-foot">
-        <div class="foot-left">
-          <span><span id="charCount" class="mono">0</span> 文字</span>
-          <span class="divider"></span>
-          <span id="saveState" class="save-state fresh"></span>
-          <span class="divider"></span>
-          <span class="foot-dates mono" id="footDates">作成 <span id="stampCreated">—</span>・更新 <span id="stampUpdated">—</span></span>
-        </div>
-        <div class="foot-right">
-          <button id="btnCopyText" class="btn btn-soft" title="テキストをクリップボードにコピー"><i class="fa-regular fa-copy"></i> コピー</button>
-          <button id="btnDelete" class="btn btn-danger-ghost"><i class="fa-regular fa-trash-can"></i> 削除</button>
-          <button id="btnSave" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> 保存 <kbd>Ctrl+S</kbd></button>
-        </div>
-      </div>
     </div>
   </main>
 

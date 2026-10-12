@@ -732,14 +732,31 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .foot-dates{font-size:11px;color:var(--text-sub);white-space:nowrap}
 
 .toolbar{
-  display:flex;align-items:center;flex-wrap:wrap;gap:6px 6px;
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px 2px;
   padding:6px calc(var(--col) - 8px);
-  border-top:1px dashed var(--line-strong);
-  border-bottom:1px dashed var(--line-strong);
-  background:#FCFBF7;
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  background:var(--surface);
 }
-.tool-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-.toolbar-end{margin-left:auto}
+.tool-group{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+/* 段落・文字の飾り・サイズと色・書式の解除、の役割ごとに細い線で区切る */
+.tool-sep{width:1px;height:20px;background:var(--line);margin:0 6px;flex-shrink:0}
+.toolbar-end{margin-left:auto;gap:6px}
+/* 保存ボタン（保存状態を兼ねる）。保存済み＝控えめ／未保存＝強調 */
+.save-btn{
+  display:inline-flex;align-items:center;
+  height:30px;padding:0 12px;border-radius:7px;
+  font-size:12.5px;font-weight:600;white-space:nowrap;
+  border:1px solid var(--primary-line);background:var(--primary-soft);color:var(--primary);
+  transition:background-color .15s,color .15s,border-color .15s,box-shadow .15s;
+}
+.save-btn:hover{background:#D2E7E1}
+.save-btn.dirty,.save-btn.fresh{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:var(--shadow-1)}
+.save-btn.dirty:hover,.save-btn.fresh:hover{background:var(--primary-deep)}
+.save-btn .save-state{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.save-btn .save-state i{font-size:10px}
+.save-btn.dirty .save-state i{font-size:7px;color:#FFD27A}
+.save-btn.fresh .save-state i{font-size:9px}
 
 /* 画面が狭いときのタブ切替。広い画面では使わないので既定は非表示 */
 .mobile-tabs{display:none;background:var(--ink-900);border-bottom:1px solid var(--ink-line);flex-shrink:0}
@@ -781,6 +798,15 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .tool-more-item > i{width:15px;text-align:center;color:var(--text-sub);font-size:12px}
 .tool-more-item:hover{background:var(--primary-soft);color:var(--primary-deep)}
 .tool-more-item:hover > i{color:var(--primary)}
+.tool-more-danger{color:var(--rec)}
+.tool-more-danger > i{color:var(--rec) !important}
+.tool-more-danger:hover{background:var(--rec-soft) !important;color:var(--rec-deep) !important}
+/* 文字数・作成/更新日時。ふだん見る必要のない情報なのでメニューの下部に小さく置く */
+.tool-more-info{
+  display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;
+  margin-top:4px;padding:8px 8px 2px;border-top:1px solid var(--line);
+  font-size:11px;color:var(--text-sub);
+}
 .tool-more-item.recording{background:var(--rec-soft);color:var(--rec-deep)}
 .tool-more-item.recording > i{color:var(--rec)}
 .toolbar .icon-btn.active{color:var(--primary);background:var(--primary-soft)}
@@ -798,7 +824,9 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .fmt-select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(19,121,108,.15)}
 .fmt-select--tpl{min-width:140px}
 .fmt-select--sm{min-width:auto;width:96px}
-.tool-div{width:1px;align-self:stretch;background:var(--line-strong);margin:0 1px}
+/* 段落の種類は「チェックリスト」まで切れずに読める幅にする */
+#blockSelect{width:122px}
+.tool-div{width:1px;height:20px;background:var(--line);margin:0 6px}
 .color-tool{
   display:inline-flex;align-items:center;gap:4px;
   height:28px;padding:0 4px 0 5px;border-radius:6px;
@@ -1017,20 +1045,6 @@ button:disabled{cursor:not-allowed;opacity:.45}
   color:#B9B4A3;white-space:pre-line;pointer-events:none;
 }
 
-.sheet-foot{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:8px var(--col);
-  border-top:1px solid var(--line);
-  background:#FCFBF7;
-}
-.foot-left{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text-sub)}
-.foot-left .divider{width:1px;height:14px;background:var(--line-strong)}
-.save-state{display:inline-flex;align-items:center;gap:6px;font-weight:600}
-.save-state.dirty{color:var(--amber)}
-.save-state.saved{color:var(--primary)}
-.save-state.fresh{color:var(--text-sub)}
-.save-state i{font-size:10px}
-.foot-right{display:flex;align-items:center;gap:10px}
 
 /* ============================================================
    画像パネル
@@ -1614,12 +1628,9 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   .sidebar-open-tab, .imgpanel-resizer { display: none !important; }
 
   .editor-sheet { margin: 8px; width: calc(100% - 16px); }
-  .sheet-head, .toolbar, .sheet-foot { padding: 9px 13px; }
+  .sheet-head, .toolbar { padding: 9px 13px; }
   .body-editable { padding: 13px; }
   .toolbar { flex-wrap: wrap; }
-  /* フッターは横に並べきれないので折り返し、保存を右端に保つ */
-  .sheet-foot { flex-wrap: wrap; gap: 8px; }
-  .foot-right { margin-left: auto; }
 }
 
 /* ============================================================

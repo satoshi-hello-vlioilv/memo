@@ -70,20 +70,29 @@ function markDirty() {
   /* 保存を押す前にタブが閉じても書きかけが残るよう、下書きを退避する */
   scheduleDraftSave();
 }
+/* 保存ボタンが保存状態を兼ねる。保存済みのときは控えめにして目立たせず、
+   未保存の変更があるときだけ強調して「押すべき」ことを示す（項目E の決定案） */
 function renderSaveState() {
   const el = refs.saveState;
+  const btn = refs.btnSave;
   if (state.dirty) {
     el.className = 'save-state dirty';
-    el.innerHTML = '<i class="fa-solid fa-circle"></i>未保存の変更があります';
+    el.innerHTML = '<i class="fa-solid fa-circle"></i>保存';
+    btn.className = 'save-btn dirty';
+    btn.title = '未保存の変更があります。クリックで保存（Ctrl+S）';
   } else if (state.savedAt) {
     el.className = 'save-state saved';
-    el.innerHTML = `<i class="fa-solid fa-circle-check"></i>保存済み ${fmtTime(state.savedAt)}`;
+    el.innerHTML = '<i class="fa-solid fa-check"></i>保存済み';
+    btn.className = 'save-btn saved';
+    btn.title = `${fmtTime(state.savedAt)} に保存済み（Ctrl+S）`;
   } else {
     el.className = 'save-state fresh';
-    el.innerHTML = '<i class="fa-regular fa-circle"></i>未保存（新規）';
+    el.innerHTML = '<i class="fa-regular fa-circle"></i>保存';
+    btn.className = 'save-btn fresh';
+    btn.title = 'まだ保存していない新しいメモです（Ctrl+S）';
   }
 }
-/* 作成・更新日時はフッターの保存状態の隣に短く出し、正確な日時はマウスを乗せると見られる */
+/* 作成・更新日時と文字数はツールバーの「…」の下部に短く出す。正確な日時はマウスを乗せると見られる */
 function renderStamps() {
   const m = state.memos.find(x => x.id === state.currentId);
   refs.stampCreated.textContent = m ? fmtListDate(m.createdAt) : '—';

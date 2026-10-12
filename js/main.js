@@ -505,7 +505,7 @@ function bindEvents() {
   /* 中の操作は選択範囲を保つ必要があるため、メニュー自体のクリックでは閉じない。
      音声入力・改行マークのように一度で完結するものだけ閉じる */
   refs.toolMore.addEventListener('click', e => {
-    if (e.target.closest('#btnMic, #btnShowMarks')) closeToolMore();
+    if (e.target.closest('#btnMic, #btnShowMarks, #btnCopyText, #btnDelete')) closeToolMore();
     e.stopPropagation();
   });
   document.addEventListener('click', closeToolMore);

@@ -145,7 +145,7 @@
 - **永続化**: IndexedDB v4（`memos` / `images` / `files` / `formats` / `tags` / `prefs` / `drafts` ストア）
   - 旧バージョンのデータベースは起動時に自動で移行されます（検索用テキストの生成など）
 - **音声入力**: Web Speech API（`webkitSpeechRecognition`）
-- **アイコン**: Font Awesome 6（CDN）
+- **アイコン**: Font Awesome Free 6.5.1（`vendor/fontawesome/` に同梱。オフラインでも表示される）
 - **動作環境**: Chrome / Edge など最新の Chromium 系ブラウザを推奨
   （IndexedDB 非対応環境・シークレットモードでは保存機能が制限される場合があります）
 - **テスト**: `npm test`（Node.js 22 以降の `node:test` のみ。依存パッケージのインストールは不要）
@@ -181,6 +181,7 @@
 | `js/data.js` | エクスポート／インポート、ドラッグ&ドロップ |
 | `js/main.js` | イベント結線とアプリの初期化 |
 | `tests/` | 依存ライブラリ無しのテスト（`npm test`） |
+| `vendor/fontawesome/` | 同梱のアイコン（Font Awesome Free 6.5.1 の solid・regular。ライセンスは同フォルダの LICENSE.txt） |
 | `tools/uiux/` | UI の確認・評価ハーネス（実ブラウザでのキャプチャと計測、通しの確認） |
 | `docs/uiux/` | UI/UX 改修の評価記録（案・点数・決定理由） |
 | `CLAUDE.md` | 開発の約束と、UI/UX 改修の決定手順（7案・最大3回評価） |

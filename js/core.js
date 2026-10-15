@@ -6,7 +6,7 @@
 'use strict';
 
 /* アプリのバージョン。更新時はここと CHANGELOG.md を合わせて更新する */
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.8.2';
 
 /* ============================================================
    ユーティリティ
@@ -226,7 +226,7 @@ function collectRefs() {
     'searchInput','searchClear','searchScope','searchSuggest','btnFilter','filterPop','filterBadge','filterBar','btnListMore','listMore','groupFieldRow','markBar','tagBar','listCount','btnSelectMode','btnImageFilter','btnFileFilter','btnGroupByDate','groupFieldSelect','sortKeySelect','btnSortOrder','ctxMenu','dropCaret','memoList','listEmpty','listEmptyMsg',
     'bulkBar','bulkCount','btnBulkAll','bulkAllLabel','bulkNormalActs','bulkTrashActs','btnBulkTag','bulkMarkSelect','btnBulkExport','btnBulkTrash','btnBulkRestore','btnBulkPurge',
     'welcome','sheet','btnWelcomeNew','btnWelcomeFmt',
-    'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagEntry','tagEditor','tagsSuggest','tagsPreview','footDates','btnAddMedia','mediaStrip','mediaInput',
+    'titleInput','stampCreated','stampUpdated','markPicker','tagsInput','tagEntry','tagEditor','tagsSuggest','tagsPreview','footDates','btnAddMedia','btnPanelChip','mediaStrip','mediaInput',
     'tmInput','tmAdd','tmList','tmEmpty',
     'formatSelect','btnApplyFormat','btnToolMore','toolMore','btnMic','recIndicator','recTime','btnShowMarks',
     'btnUndo','btnRedo','blockSelect','btnBold','btnItalic','btnLink','fontFamilySelect','fontSizeSelect','textColorInput','highlightColorInput','btnClearFormat',

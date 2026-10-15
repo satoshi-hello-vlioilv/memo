@@ -4,7 +4,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Memo Studio — Field Notes</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- アイコン（Font Awesome Free 6.5.1）は CDN ではなく同梱した版を読む。
+     オフラインや file:// で開いたときに文字のないボタンが消えてしまうため（不具合6）。
+     使うのは solid / regular の2種類だけなので、ブランド用のフォントは同梱しない -->
+<link rel="stylesheet" href="vendor/fontawesome/css/fontawesome.min.css">
+<link rel="stylesheet" href="vendor/fontawesome/css/solid.min.css">
+<link rel="stylesheet" href="vendor/fontawesome/css/regular.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -175,6 +180,8 @@
             <div class="tags-suggest" id="tagsSuggest" hidden=""></div>
           </div>
           <!-- 画像・添付がまだ無いメモでは、帯の代わりにこのボタンだけを出す -->
+          <!-- 右のパネルを開いている間は帯を隠し（同じ画像が2か所に並ぶため）、ここに「表示中 ✕」を出す -->
+          <button id="btnPanelChip" class="panel-chip" title="右のパネルを閉じる" hidden=""></button>
           <button id="btnAddMedia" class="add-media" title="このメモに画像やファイルを追加（ドラッグ&amp;ドロップ・貼り付けでも追加できます）"><i class="fa-solid fa-paperclip"></i> 画像・ファイルを追加</button>
         </div>
         <!-- 画像・添付の帯。中身があるときだけ表示し、大きく見たいときは右のパネルを開く -->

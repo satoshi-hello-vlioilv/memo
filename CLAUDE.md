@@ -9,9 +9,9 @@
   新しいファイルを足したら `index.html` の読み込み順と `tests/helpers.js` を合わせて更新する
 - コメント・UI 文言・コミットメッセージ・報告は日本語。コメントは「なぜそうしたか」を書く
 - DOM に触れない関数は各ファイル末尾の `module.exports` から書き出し、`tests/` で検証する（`npm test`）
-- 画面の変更は必ず実ブラウザ（Playwright + Chromium）で確認してから完了とする。
-  サンドボックスでは Font Awesome の CDN が遮断されるため、確認時はローカルに取得した同版へ差し替える
-  （`tools/uiux/` のハーネスが自動で行う）
+- 画面の変更は必ず実ブラウザ（Playwright + Chromium）で確認してから完了とする（`tools/uiux/` のハーネス）
+- アイコンは `vendor/fontawesome/`（Font Awesome Free 6.5.1 の solid・regular）を同梱して読む。
+  新しいアイコンを使うときは、無料版のその書体にあるか確かめる（`fa-regular` は無料版に無いものが多い）
 - 変更したら `CHANGELOG.md` と `js/core.js` の `APP_VERSION` を更新し、README の該当箇所も直す
 - 作業ブランチで commit → push し、指示があれば `main` へマージして push する
 

@@ -1226,7 +1226,16 @@ body.resizing-imgpanel .imgpanel-resizer::after{background:var(--primary)}
   border:1px solid var(--line);color:var(--text-sub);font-size:11.5px;white-space:nowrap;
 }
 .ms-panel:hover{color:var(--text);background:var(--paper)}
-.ms-panel.active{color:var(--primary-deep);border-color:var(--primary-line);background:var(--primary-soft)}
+/* パネルを開いている間にメタ情報の行へ出す「画像 n・添付 n を表示中 ✕」（押すとパネルを閉じる） */
+.panel-chip{
+  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
+  height:28px;padding:0 10px;margin-top:0;border-radius:14px;
+  border:1px solid var(--primary-line);background:var(--primary-soft);color:var(--primary-deep);
+  font-size:11.5px;white-space:nowrap;
+}
+.panel-chip b{font-family:var(--font-mono);font-weight:600}
+.panel-chip .fa-xmark{margin-left:2px;font-size:10px}
+.panel-chip:hover{background:#D2E7E1}
 /* 画像・添付がまだ無いメモでは、メタ情報の行に控えめな追加ボタンだけを置く */
 .add-media{
   display:inline-flex;align-items:center;gap:6px;

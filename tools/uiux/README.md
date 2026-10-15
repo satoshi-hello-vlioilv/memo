@@ -9,8 +9,8 @@
 # 1. 確認用のサーバーを起動（リポジトリのルートを公開。既定のポートは 8934）
 node tools/uiux/serve.cjs &
 
-# 2. アイコン（Font Awesome）を手元に用意する。サンドボックスでは CDN が遮断されるため、
-#    同じ版をローカルから配信してキャプチャにアイコンが写るようにする
+# 2. （任意）旧版の画面を比べるとき用：CDN から読む版のアイコンをローカルから配信するための取得。
+#    v1.8.2 以降のアプリはアイコンを vendor/ に同梱しているので不要
 mkdir -p tools/uiux/.cache/fontawesome && cd tools/uiux/.cache/fontawesome \
   && npm pack @fortawesome/fontawesome-free@6.5.1 && tar xzf fortawesome-fontawesome-free-6.5.1.tgz && cd -
 ```

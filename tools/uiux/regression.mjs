@@ -13,7 +13,8 @@ const sel = (p, needle, len) => p.evaluate(([needle, len]) => {
 {
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(String(e)));
-  await p.route('**/cdnjs.cloudflare.com/**', r => r.abort());
+  /* 外部への通信をすべて止めても、同梱のアイコンが読み込まれること（不具合6） */
+  await p.route('**/*', r => /^(http:\/\/127\.0\.0\.1|data:|blob:)/.test(r.request().url()) ? r.continue() : r.abort());
   await p.goto(BASE); await p.waitForTimeout(700);
   ck('初回：ようこそ画面', await p.locator('#welcome').isVisible());
   ck('初回：一覧は空の案内', await p.locator('#listEmpty').isVisible());
@@ -31,7 +32,9 @@ const sel = (p, needle, len) => p.evaluate(([needle, len]) => {
   await p.reload(); await p.waitForTimeout(800);
   await p.locator('.memo-item').first().click(); await p.waitForTimeout(500);
   ck('再読込後も本文とタグ', (await p.locator('#bodyInput').innerText()).includes('一行目') && (await p.locator('#tagsInput').inputValue()) === 'テスト');
-  ck('アイコンが無くても JS エラーなし', errs.length === 0, errs.join('|'));
+  ck('外部通信なしでもアイコンが読み込まれる', await p.evaluate(async () => { await document.fonts.ready;
+    return ['900', '400'].every(w => [...document.fonts].some(f => f.family.includes('Font Awesome') && f.weight === w && f.status === 'loaded')); }));
+  ck('外部通信なしでも JS エラーなし', errs.length === 0, errs.join('|'));
   await ctx.close();
 }
 
@@ -124,8 +127,9 @@ ck('ライトボックスで次へ', (await p.locator('#lbIndex').innerText()).i
 await p.keyboard.press('Escape'); await p.waitForTimeout(200);
 await p.locator('.ms-panel').click(); await p.waitForTimeout(300);
 ck('パネルを開く', await p.locator('#imgPanel').isVisible());
-await p.locator('.ms-panel').click(); await p.waitForTimeout(300);
-ck('帯から閉じる', !(await p.locator('#imgPanel').isVisible()));
+ck('パネル表示中は帯を隠す（同じ画像を2か所に出さない）', await p.locator('#mediaStrip').isHidden() && await p.locator('#btnPanelChip').isVisible());
+await p.locator('#btnPanelChip').click(); await p.waitForTimeout(300);
+ck('「表示中 ✕」で閉じると帯が戻る', !(await p.locator('#imgPanel').isVisible()) && await p.locator('#mediaStrip').isVisible());
 
 // 管理画面
 await p.locator('#btnManage').click(); await p.waitForTimeout(300);

@@ -15,11 +15,18 @@ function renderMediaStrip() {
   const imgs = state.images || [];
   const files = state.attachments || [];
   const has = imgs.length + files.length > 0;
-  refs.mediaStrip.hidden = !has;
-  refs.btnAddMedia.hidden = has;
-  if (!has) { refs.mediaStrip.innerHTML = ''; return; }
   const mobile = isMobileLayout();
   const open = panelEffectivelyOpen() && !mobile;
+  /* パネルを開いている間は帯を隠す。同じ画像がパネルと帯の2か所に並んでしまうため（不具合7）。
+     代わりにメタ情報の行へ「画像 n・添付 n を表示中 ✕」を出し、そこから閉じられるようにする */
+  const showChip = has && open;
+  refs.mediaStrip.hidden = !has || showChip;
+  refs.btnAddMedia.hidden = has;
+  refs.btnPanelChip.hidden = !showChip;
+  if (showChip) {
+    refs.btnPanelChip.innerHTML = `<i class="fa-solid fa-table-columns"></i>画像 <b>${imgs.length}</b>・添付 <b>${files.length}</b> を表示中<i class="fa-solid fa-xmark"></i>`;
+  }
+  if (!has || showChip) { refs.mediaStrip.innerHTML = ''; return; }
   refs.mediaStrip.innerHTML =
     imgs.map((img, i) =>
       `<button class="ms-thumb" data-index="${i}" title="${esc(img.name)}（クリックで拡大）">
@@ -31,8 +38,7 @@ function renderMediaStrip() {
     /* 狭い画面ではパネルではなく「画像・添付」の画面へ移るので、言い方を変える */
     (mobile
       ? `<button class="ms-panel" data-act="panel" title="画像と添付を大きく表示"><i class="fa-regular fa-images"></i> 大きく見る</button>`
-      : `<button class="ms-panel${open ? ' active' : ''}" data-act="panel" title="${open ? '右のパネルを閉じる' : '画像と添付を右のパネルで大きく表示'}">` +
-        (open ? '<i class="fa-solid fa-xmark"></i> パネルを閉じる' : '<i class="fa-solid fa-table-columns"></i> パネルで見る') + `</button>`);
+      : `<button class="ms-panel" data-act="panel" title="画像と添付を右のパネルで大きく表示"><i class="fa-solid fa-table-columns"></i> パネルで見る</button>`);
 }
 
 /* 画像と、それ以外のファイルを振り分けて登録する（帯の「＋」から） */
@@ -46,6 +52,7 @@ function addMediaFiles(fileList) {
 
 function bindMediaStrip() {
   refs.btnAddMedia.addEventListener('click', () => refs.mediaInput.click());
+  refs.btnPanelChip.addEventListener('click', () => togglePanel(false));
   refs.mediaInput.addEventListener('change', () => {
     if (refs.mediaInput.files.length > 0) addMediaFiles(refs.mediaInput.files);
     refs.mediaInput.value = '';

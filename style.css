@@ -660,14 +660,17 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .welcome-hints span{display:flex;align-items:center;gap:7px}
 .welcome-hints i{color:var(--primary)}
 
-/* 本文は枠のない1枚の紙として編集列いっぱいに広げ、文字の並ぶ列だけを
-   読みやすい行長（約 860px）に保つ。--col は左右の余白で、列が広いほど増える */
+/* 本文は枠のない1枚の紙として編集列いっぱいに広げる。--col は左右の余白で、
+   編集列の幅の 3%（20〜48px）にする。以前は文字の列を 860px に収めていたため、
+   1440 幅でも左右に 134px ずつ空いていた（項目M の決定案）。
+   ただし 1920 幅のような広い画面では1行が長くなりすぎて読みにくいため、
+   文字の列は 1240px を上限にし、余りを左右に振り分ける */
 .editor-sheet{
   flex:1;display:flex;flex-direction:column;min-height:0;
   background:var(--surface);
   width:100%;
   overflow:hidden;
-  --col:max(28px, calc((100% - 860px) / 2));
+  --col:max(clamp(20px, 3%, 48px), calc((100% - 1240px) / 2));
 }
 .sheet-head{padding:16px var(--col) 0}
 .title-input{

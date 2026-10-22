@@ -49,7 +49,7 @@ for (const v of variants) {
   console.log(`${v.id} ${v.name}`);
   for (const sh of shots) {
     const m = s[sh.key || String(sh.w)];
-    console.log(`   ${sh.key || sh.w}: body ${m.bodyVisW}x${m.bodyVisH} (${m.bodyAreaPct}%) top=${m.bodyTop} list=${m.listItemsVisible}件 top=${m.listTop} ctrls=${m.controlsVisible} small=${m.smallTargets}${m.hOverflow ? ' OVERFLOW' : ''}${m.errors.length ? ' ERR:' + m.errors.join('|').slice(0, 120) : ''}`);
+    console.log(`   ${sh.key || sh.w}: text ${m.textW}px pad ${m.padL}px body ${m.bodyVisW}x${m.bodyVisH} (${m.bodyAreaPct}%) top=${m.bodyTop} list=${m.listItemsVisible}件 top=${m.listTop} ctrls=${m.controlsVisible} small=${m.smallTargets}${m.hOverflow ? ' OVERFLOW' : ''}${m.errors.length ? ' ERR:' + m.errors.join('|').slice(0, 120) : ''}`);
   }
 }
 fs.writeFileSync(metricsFile, JSON.stringify(all, null, 1));

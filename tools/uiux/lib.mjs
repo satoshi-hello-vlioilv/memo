@@ -134,6 +134,10 @@ export async function measure(page) {
     const body = document.getElementById('bodyInput');
     const wrap = document.querySelector('.body-wrap') || body;
     const br = rect(wrap);
+    /* 文字の列の実際の幅（本文の要素の幅から左右の余白を引いたもの） */
+    const cs = body ? getComputedStyle(body) : null;
+    const textW = body ? Math.round(body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) : 0;
+    const padL = body ? Math.round(parseFloat(cs.paddingLeft)) : 0;
     const bodyVisH = br ? Math.max(0, Math.min(br.bottom, innerHeight) - Math.max(br.top, 0)) : 0;
     const bodyVisW = br ? Math.max(0, Math.min(br.right, innerWidth) - Math.max(br.left, 0)) : 0;
     const list = document.getElementById('memoList');
@@ -143,7 +147,7 @@ export async function measure(page) {
       .filter(el => !body || !body.contains(el));
     const small = ctrls.filter(el => { const r = el.getBoundingClientRect(); return Math.min(r.width, r.height) < 24; });
     return {
-      vw: innerWidth, vh: innerHeight,
+      vw: innerWidth, vh: innerHeight, textW, padL,
       bodyTop: br ? Math.round(br.top) : null,
       bodyAreaPct: Math.round(bodyVisH * bodyVisW / (innerWidth * innerHeight) * 100),
       bodyVisH: Math.round(bodyVisH), bodyVisW: Math.round(bodyVisW),

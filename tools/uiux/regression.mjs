@@ -32,6 +32,12 @@ const sel = (p, needle, len) => p.evaluate(([needle, len]) => {
   await p.reload(); await p.waitForTimeout(800);
   await p.locator('.memo-item').first().click(); await p.waitForTimeout(500);
   ck('再読込後も本文とタグ', (await p.locator('#bodyInput').innerText()).includes('一行目') && (await p.locator('#tagsInput').inputValue()) === 'テスト');
+  /* ZIP に圧縮したバックアップの取り込み（tests/fixtures の ZIP） */
+  await p.locator('#fileImport').setInputFiles(new URL('../../tests/fixtures/backup-deflate.zip', import.meta.url).pathname);
+  await p.waitForTimeout(600);
+  if (await p.locator('#dialogRoot').isVisible()) await p.locator('#dlgFoot .btn', { hasText: '重複はスキップ' }).click();
+  await p.waitForTimeout(800);
+  ck('ZIP に圧縮したデータを取り込める', (await p.locator('.memo-item').count()) === 2 && (await p.locator('.mi-title').allTextContents()).includes('ZIPのメモ'));
   ck('外部通信なしでもアイコンが読み込まれる', await p.evaluate(async () => { await document.fonts.ready;
     return ['900', '400'].every(w => [...document.fonts].some(f => f.family.includes('Font Awesome') && f.weight === w && f.status === 'loaded')); }));
   ck('外部通信なしでも JS エラーなし', errs.length === 0, errs.join('|'));

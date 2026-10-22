@@ -32,7 +32,7 @@
       </div>
     </div>
     <div class="topbar-actions">
-      <input type="file" id="fileImport" accept=".json" hidden="">
+      <input type="file" id="fileImport" accept=".json,.zip,application/json,application/zip" hidden="">
       <button id="btnImport" class="icon-btn-inv" title="データのインポート"><i class="fa-solid fa-file-import"></i></button>
       <button id="btnExport" class="icon-btn-inv" title="データのエクスポート"><i class="fa-solid fa-file-export"></i></button>
       <button id="btnManage" class="btn btn-ghost-inv"><i class="fa-solid fa-sliders"></i> 管理</button>
@@ -345,7 +345,7 @@
   <div class="drop-card">
     <i class="fa-solid fa-file-arrow-up"></i>
     <span id="dropMainText">ファイルをドロップして取り込み</span>
-    <span class="drop-sub" id="dropSubText">画像はメモに添付／JSON はデータを取り込み</span>
+    <span class="drop-sub" id="dropSubText">画像はメモに添付／JSON・ZIP はデータを取り込み</span>
   </div>
 </div>
 
@@ -522,6 +522,7 @@
 <script src="js/media.js"></script>
 <script src="js/speech.js"></script>
 <script src="js/formats.js"></script>
+<script src="js/zip.js"></script>
 <script src="js/data.js"></script>
 <script src="js/main.js"></script>
 

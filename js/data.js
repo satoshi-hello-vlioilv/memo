@@ -1,7 +1,7 @@
 /* ============================================================
    data.js
    データの入出力：エクスポート／インポート（Minutes Memo Pro 形式の
-   変換を含む）、ドラッグ&ドロップ
+   変換、ZIP に圧縮したデータの取り込みを含む）、ドラッグ&ドロップ
    ============================================================ */
 'use strict';
 
@@ -271,35 +271,77 @@ async function importMemoStudio(data, { skipDuplicates }) {
   return result;
 }
 
+/* 取り込むファイルを読み、JSON データの一覧にする。
+   ZIP の場合は中の .json をすべて取り出す（書き出したバックアップを ZIP に
+   圧縮して保存・受け渡しした場合でも取り込めるようにするため） */
+const stripBom = t => (t.charCodeAt(0) === 0xfeff ? t.slice(1) : t);
+async function readImportSources(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!isZipBytes(bytes)) {
+    if (/\.zip$/i.test(file.name || '')) throw new Error('ZIP ファイルとして読み込めませんでした（壊れている可能性があります）');
+    return [{ name: file.name, text: new TextDecoder('utf-8').decode(bytes) }];
+  }
+  const zip = listZipEntries(bytes);
+  const files = zip.entries.filter(e => !e.dir && !isZipJunk(e.name));
+  const jsons = files.filter(e => /\.json$/i.test(e.name));
+  if (jsons.length === 0) {
+    const names = files.slice(0, 5).map(e => e.name).join('、');
+    throw new Error(`ZIP の中に取り込めるデータ（.json）がありません${names ? `（中身：${names}${files.length > 5 ? ' ほか' : ''}）` : ''}`);
+  }
+  const out = [];
+  for (const e of jsons) {
+    out.push({ name: e.name.split('/').pop(), text: new TextDecoder('utf-8').decode(await readZipEntry(zip, e)) });
+  }
+  return out;
+}
+
 async function importData(file) {
   if (!file) return;
-  let data;
   try {
-    data = JSON.parse(await file.text());
-  } catch {
-    toast('ファイルの読み込みに失敗しました', 'error');
+    let sources;
+    try {
+      sources = await readImportSources(file);
+    } catch (err) {
+      console.error(err);
+      toast(err && err.message ? err.message : 'ファイルの読み込みに失敗しました', 'error');
+      return;
+    }
+    const many = sources.length > 1;
+    if (many) toast(`ZIP の中の ${sources.length} 個のデータを順に取り込みます`, 'info');
+    for (const src of sources) {
+      let data;
+      try {
+        data = JSON.parse(stripBom(src.text));
+      } catch {
+        toast(`「${src.name}」を読み込めませんでした（JSON の形式ではありません）`, 'error');
+        continue;
+      }
+      await importParsed(data, many ? src.name : '');
+    }
+  } finally {
     refs.fileImport.value = '';
-    return;
   }
+}
 
+/* 読み込んだ JSON 1つ分を取り込む。label は ZIP に複数あるときの見分け用 */
+async function importParsed(data, label = '') {
   const fmt = detectImportFormat(data);
   if (fmt === 'unknown') {
     toast('対応していないファイル形式です（Memo Studio または Minutes Memo Pro のデータが必要です）', 'error');
-    refs.fileImport.value = '';
-    return;
+    return false;
   }
 
   try {
     if (fmt === 'minutespro-all' || fmt === 'minutespro-session') {
       const sessions = fmt === 'minutespro-all' ? (data.sessions || []) : [data];
       const ok = await confirmDialog({
-        title: 'データのインポート',
+        title: label ? `データのインポート（${label}）` : 'データのインポート',
         message: `Minutes Memo Pro のデータ（${sessions.length} 件の会議）を変換して取り込みます。\n` +
           '画像も含めて復元され、いまのデータには追加されます（上書きはしません）。',
         okLabel: 'インポート',
         kind: 'primary',
       });
-      if (!ok) { refs.fileImport.value = ''; return; }
+      if (!ok) return false;
       const flagMasters = fmt === 'minutespro-all' ? (data.flagMasters || []) : [];
       for (const session of sessions) await importMppSession(session, flagMasters);
       await refreshTagsMaster();
@@ -312,7 +354,7 @@ async function importData(file) {
       const imgs = (data.images || []).length;
       const files = (data.files || []).length;
       const v = await dialog({
-        title: 'データのインポート',
+        title: label ? `データのインポート（${label}）` : 'データのインポート',
         message: `メモ ${memos} 件を取り込みます` +
           (hasBinary ? `（画像 ${imgs} 件・添付 ${files} 件を含みます）` : '（このファイルに画像は含まれていません）') + '。\n' +
           'いまあるメモは書き換えません。同じメモ（作成日時とタイトルが一致）が既にある場合の扱いを選んでください。',
@@ -322,7 +364,7 @@ async function importData(file) {
           { label: '重複はスキップ', value: 'skip', kind: 'primary' },
         ],
       });
-      if (v !== 'all' && v !== 'skip') { refs.fileImport.value = ''; return; }
+      if (v !== 'all' && v !== 'skip') return false;
       const r = await importMemoStudio(data, { skipDuplicates: v === 'skip' });
       await refreshTagsMaster();
       await refreshFormats();
@@ -340,8 +382,9 @@ async function importData(file) {
   } catch (err) {
     console.error(err);
     toast('インポート中にエラーが発生しました', 'error');
+    return false;
   }
-  refs.fileImport.value = '';
+  return true;
 }
 
 async function copyMemoText() {
@@ -363,6 +406,9 @@ async function copyMemoText() {
    ドラッグ&ドロップ
    ============================================================ */
 const isJsonFile = f => /\.json$/i.test(f.name || '') || f.type === 'application/json' || f.type === 'text/json';
+/* ZIP はデータの取り込みとして扱う（書き出したバックアップを圧縮したもの） */
+const isZipFile = f => /\.zip$/i.test(f.name || '') || /^application\/(x-)?zip(-compressed)?$/.test(f.type || '');
+const isDataFile = f => isJsonFile(f) || isZipFile(f);
 
 /* ドラッグ中のファイル種別を推定し、オーバーレイの案内文を切り替える */
 function updateDropOverlay(e) {
@@ -372,21 +418,21 @@ function updateDropOverlay(e) {
     for (const it of items) {
       if (it.kind !== 'file') continue;
       const t = (it.type || '').toLowerCase();
-      if (t === 'application/json' || t === 'text/json') hasJson = true;
+      if (t === 'application/json' || t === 'text/json' || /zip/.test(t)) hasJson = true;
       else if (t.startsWith('image/')) hasImage = true;
       else hasOther = true;   /* 拡張子 .json でも type が空になる環境があるため汎用扱い */
     }
   }
   let main, sub;
   if (hasJson && !hasImage) {
-    main = 'JSON データを取り込む';
-    sub  = 'Memo Studio / Minutes Memo Pro のデータに対応';
+    main = 'データを取り込む';
+    sub  = 'Memo Studio / Minutes Memo Pro のデータ（JSON・ZIP）に対応';
   } else if (hasImage && !hasJson && !hasOther) {
     main = '画像をメモに添付';
     sub  = 'ドロップして画像を登録します';
   } else {
     main = 'ファイルをドロップして取り込み';
-    sub  = '画像はメモに添付／JSON はデータを取り込み';
+    sub  = '画像はメモに添付／JSON・ZIP はデータを取り込み';
   }
   refs.dropMainText.textContent = main;
   refs.dropSubText.textContent = sub;
@@ -396,12 +442,12 @@ function updateDropOverlay(e) {
 function handleDroppedFiles(fileList) {
   const files = [...fileList];
   if (files.length === 0) return;
-  const jsonFiles  = files.filter(isJsonFile);
+  const jsonFiles  = files.filter(isDataFile);
   const imageFiles = files.filter(f => f.type.startsWith('image/'));
 
   if (jsonFiles.length > 0) {
     if (jsonFiles.length > 1 || imageFiles.length > 0) {
-      toast('JSON データを取り込みます（他のファイルは無視されます）', 'info');
+      toast('データを取り込みます（他のファイルは無視されます）', 'info');
     }
     importData(jsonFiles[0]);
     return;

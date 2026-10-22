@@ -20,8 +20,10 @@ const bodyParse = load('body-parse.js');
 Object.assign(globalThis, bodyParse);
 
 const list = load('list.js');
+const zip = load('zip.js');
+Object.assign(globalThis, zip);
 const data = load('data.js');
 const files = load('files.js');
 const body = load('body.js');
 
-module.exports = { core, search, filterbar, bodyParse, list, data, files, body };
+module.exports = { core, search, filterbar, bodyParse, list, zip, data, files, body };
